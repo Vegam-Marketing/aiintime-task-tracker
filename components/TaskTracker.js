@@ -286,7 +286,7 @@ export default function TaskTracker() {
   const [tasks, setTasks] = useState([]);
   const [team, setTeam] = useState(DEFAULT_TEAM);
   const [nextId, setNextId] = useState(1);
-  const [filterOwner, setFilterOwner] = useState("All");
+  const [filterOwners, setFilterOwners] = useState(new Set()); // empty = All
   const [view, setView] = useState("both");
   const [showTeamPanel, setShowTeamPanel] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState(new Set());
@@ -313,7 +313,7 @@ export default function TaskTracker() {
     }).catch(() => { setTasks(getDefaultTasks()); setNextId(12); setLoading(false); isFirstLoad.current = false; });
   }, []);
 
-  // Auto-sync parent dates: parent end = max(children end dates), parent start = min(children start dates)
+  // Auto-sync parent dates: parent always matches min(children starts) to max(children ends)
   useEffect(() => {
     if (isFirstLoad.current || loading) return;
     setTasks((prev) => {
@@ -325,18 +325,11 @@ export default function TaskTracker() {
 
         const childEnds = children.map((c) => parseDate(c.end));
         const childStarts = children.map((c) => parseDate(c.start));
-        const maxEnd = new Date(Math.max(...childEnds));
-        const minStart = new Date(Math.min(...childStarts));
-        const parentEnd = parseDate(t.end);
-        const parentStart = parseDate(t.start);
-
-        let newEnd = t.end;
-        let newStart = t.start;
-
-        if (maxEnd > parentEnd) { newEnd = fmt(maxEnd); changed = true; }
-        if (minStart < parentStart) { newStart = fmt(minStart); changed = true; }
+        const newEnd = fmt(new Date(Math.max(...childEnds)));
+        const newStart = fmt(new Date(Math.min(...childStarts)));
 
         if (newEnd !== t.end || newStart !== t.start) {
+          changed = true;
           return { ...t, end: newEnd, start: newStart };
         }
         return t;
@@ -432,7 +425,8 @@ export default function TaskTracker() {
   const handleDrop = useCallback((e, dropIdx) => { e.preventDefault(); if (dragIndex === null || dragIndex === dropIdx) return; setTasks((prev) => { const u = [...prev]; const [d] = u.splice(dragIndex, 1); u.splice(dropIdx, 0, d); return u; }); setDragIndex(null); setDragOverIndex(null); }, [dragIndex]);
   const handleDragEnd = useCallback(() => { if (dragNode.current) dragNode.current.style.opacity = "1"; setDragIndex(null); setDragOverIndex(null); dragNode.current = null; }, []);
 
-  const filtered = filterOwner === "All" ? tasks : tasks.filter((t) => t.owner === filterOwner);
+  const isAllSelected = filterOwners.size === 0;
+  const filtered = isAllSelected ? tasks : tasks.filter((t) => filterOwners.has(t.owner));
   const displayList = useMemo(() => buildDisplayList(filtered, collapsedIds), [filtered, collapsedIds]);
 
   const stats = { total: filtered.length, done: filtered.filter((t) => t.status === "Done").length, blocked: filtered.filter((t) => t.status === "Blocked").length, inProgress: filtered.filter((t) => t.status === "In Progress").length };
@@ -478,10 +472,26 @@ export default function TaskTracker() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={filterOwner} onChange={(e) => setFilterOwner(e.target.value)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12, fontWeight: 500, background: "#fff", cursor: "pointer", outline: "none" }}>
-            <option value="All">All Owners</option>
-            {ownerNames.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
+          <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={() => setFilterOwners(new Set())}
+              style={{ padding: "5px 12px", borderRadius: 20, border: isAllSelected ? "2px solid #1E293B" : "1px solid #E2E8F0", fontSize: 11, fontWeight: 600, background: isAllSelected ? "#1E293B" : "#fff", color: isAllSelected ? "#fff" : "#64748B", cursor: "pointer" }}>All</button>
+            {ownerNames.map((o) => {
+              const active = filterOwners.has(o);
+              const oc = ownerColors[o] || { bg: "#6B7280", light: "#F3F4F6", text: "#374151" };
+              return (
+                <button key={o} onClick={() => {
+                  setFilterOwners((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(o)) next.delete(o); else next.add(o);
+                    return next;
+                  });
+                }}
+                  style={{ padding: "5px 12px", borderRadius: 20, border: active ? `2px solid ${oc.bg}` : "1px solid #E2E8F0", fontSize: 11, fontWeight: 600, background: active ? oc.light : "#fff", color: active ? oc.text : "#64748B", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: oc.bg }} />{o}
+                </button>
+              );
+            })}
+          </div>
           <div style={{ display: "flex", borderRadius: 8, border: "1px solid #E2E8F0", overflow: "hidden" }}>
             {[["both", "Table + Gantt"], ["table", "Table"], ["gantt", "Gantt"]].map(([v, l]) => (
               <button key={v} onClick={() => setView(v)} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer", background: view === v ? "#1E293B" : "#fff", color: view === v ? "#fff" : "#64748B" }}>{l}</button>
@@ -510,11 +520,11 @@ export default function TaskTracker() {
                 const isSubtask = t._depth > 0;
 
                 return (
-                  <tr key={t.id} draggable={filterOwner === "All"} onDragStart={(e) => handleDragStart(e, globalIndex)} onDragEnter={(e) => handleDragEnter(e, globalIndex)} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, globalIndex)} onDragEnd={handleDragEnd}
+                  <tr key={t.id} draggable={isAllSelected} onDragStart={(e) => handleDragStart(e, globalIndex)} onDragEnter={(e) => handleDragEnter(e, globalIndex)} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, globalIndex)} onDragEnd={handleDragEnd}
                     style={{ borderBottom: "1px solid #F1F5F9", background: isDragOver ? "#EEF2FF" : isSubtask ? "#FAFBFE" : i % 2 === 0 ? "#fff" : "#FAFBFC", borderTop: isDragOver ? "2px solid #6366F1" : "none", borderLeft: isSubtask ? "3px solid " + oc.bg + "44" : "3px solid transparent" }}>
                     {/* Drag handle */}
-                    <td style={{ padding: "6px 2px 6px 6px", width: 30, cursor: filterOwner === "All" ? "grab" : "default" }}>
-                      {filterOwner === "All" && <span style={{ color: "#CBD5E1", fontSize: 14, userSelect: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>⠿</span>}
+                    <td style={{ padding: "6px 2px 6px 6px", width: 30, cursor: isAllSelected ? "grab" : "default" }}>
+                      {isAllSelected && <span style={{ color: "#CBD5E1", fontSize: 14, userSelect: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>⠿</span>}
                     </td>
                     {/* Row number */}
                     <td style={{ padding: "6px 2px", width: 32, fontSize: 11, color: "#94A3B8", fontWeight: 600, textAlign: "center" }}>{i + 1}</td>
