@@ -311,6 +311,38 @@ export default function TaskTracker() {
     }).catch(() => { setTasks(getDefaultTasks()); setNextId(12); setLoading(false); isFirstLoad.current = false; });
   }, []);
 
+  // Auto-sync parent dates: parent end = max(children end dates), parent start = min(children start dates)
+  useEffect(() => {
+    if (isFirstLoad.current || loading) return;
+    setTasks((prev) => {
+      let changed = false;
+      const updated = prev.map((t) => {
+        if (t.parentId && t.parentId !== 0) return t; // Skip subtasks
+        const children = prev.filter((c) => c.parentId === t.id);
+        if (children.length === 0) return t;
+
+        const childEnds = children.map((c) => parseDate(c.end));
+        const childStarts = children.map((c) => parseDate(c.start));
+        const maxEnd = new Date(Math.max(...childEnds));
+        const minStart = new Date(Math.min(...childStarts));
+        const parentEnd = parseDate(t.end);
+        const parentStart = parseDate(t.start);
+
+        let newEnd = t.end;
+        let newStart = t.start;
+
+        if (maxEnd > parentEnd) { newEnd = fmt(maxEnd); changed = true; }
+        if (minStart < parentStart) { newStart = fmt(minStart); changed = true; }
+
+        if (newEnd !== t.end || newStart !== t.start) {
+          return { ...t, end: newEnd, start: newStart };
+        }
+        return t;
+      });
+      return changed ? updated : prev;
+    });
+  }, [tasks, loading]);
+
   // Auto-save tasks
   useEffect(() => {
     if (isFirstLoad.current || loading) return;
@@ -462,8 +494,8 @@ export default function TaskTracker() {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1020, fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#1E293B" }}>
-                {["", "#", "", "Task", "Owner", "Start", "End", "Status", "Bottleneck / Notes", ""].map((h, i) => (
-                  <th key={i} style={{ padding: "10px 6px", textAlign: "left", color: "#E2E8F0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, whiteSpace: "nowrap", width: i === 0 ? 30 : i === 1 ? 32 : i === 2 ? 40 : undefined }}>{h}</th>
+                {["", "#", "Subtask", "Task", "Owner", "Start", "End", "Status", "Bottleneck / Notes", ""].map((h, i) => (
+                  <th key={i} style={{ padding: "10px 6px", textAlign: i === 2 ? "center" : "left", color: "#E2E8F0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, whiteSpace: "nowrap", width: i === 0 ? 30 : i === 1 ? 32 : i === 2 ? 56 : undefined }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -485,35 +517,36 @@ export default function TaskTracker() {
                     {/* Row number */}
                     <td style={{ padding: "6px 2px", width: 32, fontSize: 11, color: "#94A3B8", fontWeight: 600, textAlign: "center" }}>{i + 1}</td>
                     {/* Indent/Outdent + Collapse + Add subtask */}
-                    <td style={{ padding: "2px", width: 40 }}>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                    <td style={{ padding: "2px 4px", width: 56 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
                         {/* Collapse toggle for parents */}
-                        {t._hasChildren ? (
+                        {t._hasChildren && (
                           <button onClick={() => toggleCollapse(t.id)} title={t._isCollapsed ? "Expand subtasks" : "Collapse subtasks"}
-                            style={{ border: "none", background: "none", cursor: "pointer", fontSize: 11, color: "#64748B", padding: 0, lineHeight: 1, fontWeight: 700 }}>
+                            style={{ border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 10, color: "#475569", padding: "2px 4px", lineHeight: 1, fontWeight: 700, borderRadius: 4 }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "#E2E8F0")} onMouseLeave={(e) => (e.currentTarget.style.background = "#F1F5F9")}>
                             {t._isCollapsed ? "▶" : "▼"}
                           </button>
-                        ) : (
-                          <div style={{ height: 13 }} />
                         )}
-                        {/* Indent / Outdent / Add subtask */}
-                        <div style={{ display: "flex", gap: 1 }}>
-                          {!isSubtask && (
-                            <button onClick={() => indentTask(t.id)} title="Make subtask (indent)"
-                              style={{ border: "none", background: "none", cursor: "pointer", fontSize: 10, color: "#CBD5E1", padding: "0 2px", lineHeight: 1 }}
-                              onMouseEnter={(e) => (e.target.style.color = "#6366F1")} onMouseLeave={(e) => (e.target.style.color = "#CBD5E1")}>→</button>
-                          )}
-                          {isSubtask && (
-                            <button onClick={() => outdentTask(t.id)} title="Promote to task (outdent)"
-                              style={{ border: "none", background: "none", cursor: "pointer", fontSize: 10, color: "#CBD5E1", padding: "0 2px", lineHeight: 1 }}
-                              onMouseEnter={(e) => (e.target.style.color = "#6366F1")} onMouseLeave={(e) => (e.target.style.color = "#CBD5E1")}>←</button>
-                          )}
-                          {!isSubtask && (
-                            <button onClick={() => addSubtask(t.id)} title="Add subtask"
-                              style={{ border: "none", background: "none", cursor: "pointer", fontSize: 10, color: "#CBD5E1", padding: "0 2px", lineHeight: 1 }}
-                              onMouseEnter={(e) => (e.target.style.color = "#10B981")} onMouseLeave={(e) => (e.target.style.color = "#CBD5E1")}>+</button>
-                          )}
-                        </div>
+                        {/* Indent / Outdent */}
+                        {!isSubtask && !t._hasChildren && (
+                          <button onClick={() => indentTask(t.id)} title="Make subtask (indent)"
+                            style={{ border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 11, color: "#475569", padding: "2px 5px", lineHeight: 1, borderRadius: 4, fontWeight: 600 }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "#EEF2FF"; e.currentTarget.style.color = "#4F46E5"; e.currentTarget.style.borderColor = "#C7D2FE"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.color = "#475569"; e.currentTarget.style.borderColor = "#E2E8F0"; }}>→</button>
+                        )}
+                        {isSubtask && (
+                          <button onClick={() => outdentTask(t.id)} title="Promote to task (outdent)"
+                            style={{ border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 11, color: "#475569", padding: "2px 5px", lineHeight: 1, borderRadius: 4, fontWeight: 600 }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "#EEF2FF"; e.currentTarget.style.color = "#4F46E5"; e.currentTarget.style.borderColor = "#C7D2FE"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.color = "#475569"; e.currentTarget.style.borderColor = "#E2E8F0"; }}>←</button>
+                        )}
+                        {/* Add subtask */}
+                        {!isSubtask && (
+                          <button onClick={() => addSubtask(t.id)} title="Add subtask"
+                            style={{ border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 12, color: "#475569", padding: "2px 5px", lineHeight: 1, borderRadius: 4, fontWeight: 700 }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "#D1FAE5"; e.currentTarget.style.color = "#065F46"; e.currentTarget.style.borderColor = "#A7F3D0"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.color = "#475569"; e.currentTarget.style.borderColor = "#E2E8F0"; }}>+</button>
+                        )}
                       </div>
                     </td>
                     {/* Task name */}
@@ -557,7 +590,7 @@ export default function TaskTracker() {
           </table>
           <div style={{ padding: "8px 12px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <button onClick={addTask} style={{ border: "1px dashed #CBD5E1", background: "none", borderRadius: 8, padding: "6px 16px", fontSize: 12, fontWeight: 600, color: "#64748B", cursor: "pointer" }}>+ Add Task</button>
-            <span style={{ fontSize: 11, color: "#94A3B8" }}>→ indent  ← outdent  + add subtask</span>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>→ indent as subtask · ← promote to task · + add subtask · parent dates auto-extend</span>
           </div>
         </div>
       )}
