@@ -398,11 +398,17 @@ export default function TaskTracker() {
   const goNext = () => setCalStart(fmt(addDays(parseDate(calStart), 7)));
 
   const updateTask = useCallback((id, field, value) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
+    setTasks((prev) => prev.map((t) => {
+      if (t.id !== id) return t;
+      // Date validation: end can't be before start, start can't be after end
+      if (field === "end" && value < t.start) return { ...t, end: value, start: value };
+      if (field === "start" && value > t.end) return { ...t, start: value, end: value };
+      return { ...t, [field]: value };
+    }));
   }, []);
 
   const addTask = () => {
-    setTasks((prev) => [...prev, { id: nextId, task: "", start: fmt(mon), end: fmt(mon), owner: ownerNames[0] || "", bottleneck: "", status: "Not Started", parentId: 0 }]);
+    setTasks((prev) => [...prev, { id: nextId, task: "", start: fmt(today), end: fmt(today), owner: ownerNames[0] || "", bottleneck: "", status: "Not Started", parentId: 0 }]);
     setNextId((n) => n + 1);
   };
 
