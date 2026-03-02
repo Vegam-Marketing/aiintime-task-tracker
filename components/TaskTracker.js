@@ -237,8 +237,9 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
             const extendsLeft = startOffset < 0; const extendsRight = endOffset >= calendarDays;
             const isDragging = drag?.taskId === t.id;
             const isParent = t._hasChildren;
-            const barHeight = isParent ? rowHeight - 8 : rowHeight - 12;
-            const barTop = isParent ? 4 : 6;
+            const isSubtask = t._depth > 0;
+            const barHeight = isParent ? rowHeight - 8 : isSubtask ? rowHeight - 16 : rowHeight - 10;
+            const barTop = isParent ? 4 : isSubtask ? 8 : 5;
 
             return (
               <div key={t.id} style={{ height: rowHeight, position: "relative", borderBottom: "1px solid #F1F5F9", display: "flex" }}>
@@ -248,21 +249,22 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
                   <div onMouseDown={(e) => handleMouseDown(e, t.id, "move", t.start, t.end)}
                     style={{
                       position: "absolute", top: barTop, left: visStart * dayWidth + 2, width: barDays * dayWidth - 4, height: barHeight,
-                      borderRadius: isParent ? 3 : 5,
-                      borderTopLeftRadius: extendsLeft ? 0 : isParent ? 3 : 5, borderBottomLeftRadius: extendsLeft ? 0 : isParent ? 3 : 5,
-                      borderTopRightRadius: extendsRight ? 0 : isParent ? 3 : 5, borderBottomRightRadius: extendsRight ? 0 : isParent ? 3 : 5,
+                      borderRadius: isParent ? 3 : isSubtask ? 4 : 5,
+                      borderTopLeftRadius: extendsLeft ? 0 : isParent ? 3 : isSubtask ? 4 : 5, borderBottomLeftRadius: extendsLeft ? 0 : isParent ? 3 : isSubtask ? 4 : 5,
+                      borderTopRightRadius: extendsRight ? 0 : isParent ? 3 : isSubtask ? 4 : 5, borderBottomRightRadius: extendsRight ? 0 : isParent ? 3 : isSubtask ? 4 : 5,
                       background: isParent
                         ? `${ownerColor.bg}33`
                         : isBlocked ? `repeating-linear-gradient(135deg, ${ownerColor.bg}CC, ${ownerColor.bg}CC 4px, ${ownerColor.bg}88 4px, ${ownerColor.bg}88 8px)`
                         : isDone ? `${ownerColor.bg}55`
-                        : `linear-gradient(90deg, ${ownerColor.bg}DD, ${ownerColor.bg}AA)`,
+                        : isSubtask ? `linear-gradient(90deg, ${ownerColor.bg}99, ${ownerColor.bg}77)`
+                        : `linear-gradient(90deg, ${ownerColor.bg}EE, ${ownerColor.bg}CC)`,
                       display: "flex", alignItems: "center", padding: "0 10px", overflow: "hidden",
-                      boxShadow: isDragging ? `0 4px 14px ${ownerColor.bg}55` : isParent ? "none" : `0 1px 3px ${ownerColor.bg}33`,
-                      border: isParent ? `1.5px solid ${ownerColor.bg}88` : isBlocked ? "1px solid #EF444466" : isDone ? `1px dashed ${ownerColor.bg}88` : isDragging ? `2px solid ${ownerColor.bg}` : "none",
+                      boxShadow: isDragging ? `0 4px 14px ${ownerColor.bg}55` : isParent ? "none" : isSubtask ? `0 1px 2px ${ownerColor.bg}22` : `0 1px 4px ${ownerColor.bg}44`,
+                      border: isParent ? `1.5px solid ${ownerColor.bg}88` : isBlocked ? "1px solid #EF444466" : isDone ? `1px dashed ${ownerColor.bg}88` : isSubtask ? `1px solid ${ownerColor.bg}55` : isDragging ? `2px solid ${ownerColor.bg}` : "none",
                       cursor: "grab", zIndex: isDragging ? 10 : 2,
                     }}>
                     {!extendsLeft && <div onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, t.id, "left", t.start, t.end); }} onMouseEnter={(e) => (e.currentTarget.style.background = `${ownerColor.bg}44`)} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")} style={handleStyle("left")} />}
-                    <span style={{ fontSize: 9, fontWeight: isParent ? 700 : 600, color: isParent ? ownerColor.bg : isDone ? ownerColor.bg : "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none", pointerEvents: "none" }}>
+                    <span style={{ fontSize: isSubtask ? 8 : 9, fontWeight: isParent ? 700 : 600, color: isParent ? ownerColor.bg : isDone ? ownerColor.bg : "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none", pointerEvents: "none" }}>
                       {t.owner}{barDays * dayWidth > 110 ? ` — ${t.task}` : ""}
                     </span>
                     {isBlocked && <span style={{ marginLeft: 3, fontSize: 9, pointerEvents: "none" }}>⚠️</span>}
@@ -622,7 +624,8 @@ export default function TaskTracker() {
             <div style={{ display: "flex", gap: 14 }}>
               {[
                 { label: "Parent task", sty: { width: 20, height: 7, borderRadius: 2, background: "#3B82F622", border: "1.5px solid #3B82F688" } },
-                { label: "Subtask", sty: { width: 20, height: 7, borderRadius: 3, background: "linear-gradient(90deg, #3B82F6DD, #3B82F6AA)" } },
+                { label: "Task", sty: { width: 20, height: 8, borderRadius: 3, background: "linear-gradient(90deg, #3B82F6EE, #3B82F6CC)", boxShadow: "0 1px 3px #3B82F644" } },
+                { label: "Subtask", sty: { width: 20, height: 6, borderRadius: 3, background: "linear-gradient(90deg, #3B82F699, #3B82F677)", border: "1px solid #3B82F655" } },
                 { label: "Blocked", sty: { width: 20, height: 7, borderRadius: 3, background: "repeating-linear-gradient(135deg, #EF4444CC, #EF4444CC 3px, #EF444466 3px, #EF444466 6px)" } },
               ].map((l) => (<div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#94A3B8" }}><div style={l.sty} />{l.label}</div>))}
             </div>
