@@ -46,9 +46,10 @@ const STATUS_STYLE = {
   Blocked: { bg: "#FEE2E2", text: "#991B1B" },
 };
 
-// ─── Build display order: parents followed by their children ────────
+const MAX_DEPTH = 3; // 0=Task, 1=Subtask, 2=Sub-Subtask, 3=Sub-Sub-Subtask
+
+// ─── Build display order: recursive nesting up to 4 levels ──────────
 function buildDisplayList(tasks, collapsedIds) {
-  const topLevel = tasks.filter((t) => !t.parentId || t.parentId === 0);
   const childrenMap = {};
   tasks.forEach((t) => {
     if (t.parentId && t.parentId !== 0) {
@@ -58,19 +59,23 @@ function buildDisplayList(tasks, collapsedIds) {
   });
 
   const result = [];
-  topLevel.forEach((parent) => {
-    const children = childrenMap[parent.id] || [];
-    const hasChildren = children.length > 0;
-    result.push({ ...parent, _depth: 0, _hasChildren: hasChildren, _isCollapsed: collapsedIds.has(parent.id) });
-    if (!collapsedIds.has(parent.id)) {
-      children.forEach((child) => {
-        result.push({ ...child, _depth: 1, _hasChildren: false, _isCollapsed: false });
-      });
-    }
-  });
+  const displayedIds = new Set();
 
-  // Include orphaned subtasks (parent was deleted)
-  const displayedIds = new Set(result.map((t) => t.id));
+  function addWithChildren(task, depth) {
+    const children = childrenMap[task.id] || [];
+    const hasChildren = children.length > 0;
+    result.push({ ...task, _depth: depth, _hasChildren: hasChildren, _isCollapsed: collapsedIds.has(task.id) });
+    displayedIds.add(task.id);
+    if (!collapsedIds.has(task.id)) {
+      children.forEach((child) => addWithChildren(child, depth + 1));
+    }
+  }
+
+  // Start with top-level tasks
+  const topLevel = tasks.filter((t) => !t.parentId || t.parentId === 0);
+  topLevel.forEach((t) => addWithChildren(t, 0));
+
+  // Include orphaned tasks (parent was deleted)
   tasks.forEach((t) => {
     if (!displayedIds.has(t.id)) {
       result.push({ ...t, _depth: 0, _hasChildren: false, _isCollapsed: false, parentId: 0 });
@@ -237,9 +242,16 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
             const extendsLeft = startOffset < 0; const extendsRight = endOffset >= calendarDays;
             const isDragging = drag?.taskId === t.id;
             const isParent = t._hasChildren;
-            const isSubtask = t._depth > 0;
-            const barHeight = isParent ? rowHeight - 8 : isSubtask ? rowHeight - 16 : rowHeight - 10;
-            const barTop = isParent ? 4 : isSubtask ? 8 : 5;
+            const depth = t._depth;
+            // Bar sizing: parents are tallest, each depth level gets progressively thinner
+            const barHeight = isParent ? rowHeight - 8 : depth === 0 ? rowHeight - 10 : depth === 1 ? rowHeight - 12 : depth === 2 ? rowHeight - 16 : rowHeight - 18;
+            const barTop = isParent ? 4 : depth === 0 ? 5 : depth === 1 ? 6 : depth === 2 ? 8 : 9;
+            // Opacity decreases with depth
+            const fillOpacity = depth === 0 ? "EE" : depth === 1 ? "BB" : depth === 2 ? "88" : "66";
+            const fillOpacity2 = depth === 0 ? "CC" : depth === 1 ? "99" : depth === 2 ? "66" : "44";
+            const borderOp = depth === 0 ? "" : depth === 1 ? "77" : depth === 2 ? "55" : "44";
+            const shadowOp = depth === 0 ? "44" : depth === 1 ? "33" : depth === 2 ? "22" : "11";
+            const rad = isParent ? 3 : depth >= 2 ? 4 : 5;
 
             return (
               <div key={t.id} style={{ height: rowHeight, position: "relative", borderBottom: "1px solid #F1F5F9", display: "flex" }}>
@@ -249,22 +261,25 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
                   <div onMouseDown={(e) => handleMouseDown(e, t.id, "move", t.start, t.end)}
                     style={{
                       position: "absolute", top: barTop, left: visStart * dayWidth + 2, width: barDays * dayWidth - 4, height: barHeight,
-                      borderRadius: isParent ? 3 : isSubtask ? 4 : 5,
-                      borderTopLeftRadius: extendsLeft ? 0 : isParent ? 3 : isSubtask ? 4 : 5, borderBottomLeftRadius: extendsLeft ? 0 : isParent ? 3 : isSubtask ? 4 : 5,
-                      borderTopRightRadius: extendsRight ? 0 : isParent ? 3 : isSubtask ? 4 : 5, borderBottomRightRadius: extendsRight ? 0 : isParent ? 3 : isSubtask ? 4 : 5,
+                      borderRadius: rad,
+                      borderTopLeftRadius: extendsLeft ? 0 : rad, borderBottomLeftRadius: extendsLeft ? 0 : rad,
+                      borderTopRightRadius: extendsRight ? 0 : rad, borderBottomRightRadius: extendsRight ? 0 : rad,
                       background: isParent
                         ? `${ownerColor.bg}33`
                         : isBlocked ? `repeating-linear-gradient(135deg, ${ownerColor.bg}CC, ${ownerColor.bg}CC 4px, ${ownerColor.bg}88 4px, ${ownerColor.bg}88 8px)`
                         : isDone ? `${ownerColor.bg}55`
-                        : isSubtask ? `linear-gradient(90deg, ${ownerColor.bg}99, ${ownerColor.bg}77)`
-                        : `linear-gradient(90deg, ${ownerColor.bg}EE, ${ownerColor.bg}CC)`,
+                        : `linear-gradient(90deg, ${ownerColor.bg}${fillOpacity}, ${ownerColor.bg}${fillOpacity2})`,
                       display: "flex", alignItems: "center", padding: "0 10px", overflow: "hidden",
-                      boxShadow: isDragging ? `0 4px 14px ${ownerColor.bg}55` : isParent ? "none" : isSubtask ? `0 1px 2px ${ownerColor.bg}22` : `0 1px 4px ${ownerColor.bg}44`,
-                      border: isParent ? `1.5px solid ${ownerColor.bg}88` : isBlocked ? "1px solid #EF444466" : isDone ? `1px dashed ${ownerColor.bg}88` : isSubtask ? `1px solid ${ownerColor.bg}55` : isDragging ? `2px solid ${ownerColor.bg}` : "none",
+                      boxShadow: isDragging ? `0 4px 14px ${ownerColor.bg}55` : isParent ? "none" : `0 1px 3px ${ownerColor.bg}${shadowOp}`,
+                      border: isParent ? `1.5px solid ${ownerColor.bg}88`
+                        : isBlocked ? "1px solid #EF444466"
+                        : isDone ? `1px dashed ${ownerColor.bg}88`
+                        : isDragging ? `2px solid ${ownerColor.bg}`
+                        : depth > 0 ? `1px solid ${ownerColor.bg}${borderOp}` : "none",
                       cursor: "grab", zIndex: isDragging ? 10 : 2,
                     }}>
                     {!extendsLeft && <div onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, t.id, "left", t.start, t.end); }} onMouseEnter={(e) => (e.currentTarget.style.background = `${ownerColor.bg}44`)} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")} style={handleStyle("left")} />}
-                    <span style={{ fontSize: isSubtask ? 8 : 9, fontWeight: isParent ? 700 : 600, color: isParent ? ownerColor.bg : isDone ? ownerColor.bg : "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none", pointerEvents: "none" }}>
+                    <span style={{ fontSize: depth >= 2 ? 7 : depth === 1 ? 8 : 9, fontWeight: isParent ? 700 : 600, color: isParent ? ownerColor.bg : isDone ? ownerColor.bg : "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: isDone ? "line-through" : "none", pointerEvents: "none" }}>
                       {t.owner}{barDays * dayWidth > 110 ? ` — ${t.task}` : ""}
                     </span>
                     {isBlocked && <span style={{ marginLeft: 3, fontSize: 9, pointerEvents: "none" }}>⚠️</span>}
@@ -313,28 +328,51 @@ export default function TaskTracker() {
     }).catch(() => { setTasks(getDefaultTasks()); setNextId(12); setLoading(false); isFirstLoad.current = false; });
   }, []);
 
-  // Auto-sync parent dates: parent always matches min(children starts) to max(children ends)
+  // Auto-sync parent dates (recursive bottom-up): any task with children snaps to min(child starts) → max(child ends)
   useEffect(() => {
     if (isFirstLoad.current || loading) return;
     setTasks((prev) => {
-      let changed = false;
-      const updated = prev.map((t) => {
-        if (t.parentId && t.parentId !== 0) return t; // Skip subtasks
-        const children = prev.filter((c) => c.parentId === t.id);
-        if (children.length === 0) return t;
-
-        const childEnds = children.map((c) => parseDate(c.end));
-        const childStarts = children.map((c) => parseDate(c.start));
-        const newEnd = fmt(new Date(Math.max(...childEnds)));
-        const newStart = fmt(new Date(Math.min(...childStarts)));
-
-        if (newEnd !== t.end || newStart !== t.start) {
-          changed = true;
-          return { ...t, end: newEnd, start: newStart };
+      // Build children map
+      const childrenMap = {};
+      prev.forEach((t) => {
+        if (t.parentId && t.parentId !== 0) {
+          if (!childrenMap[t.parentId]) childrenMap[t.parentId] = [];
+          childrenMap[t.parentId].push(t.id);
         }
-        return t;
       });
-      return changed ? updated : prev;
+      const taskMap = {};
+      prev.forEach((t) => { taskMap[t.id] = { ...t }; });
+
+      // Get depth of each task (leaf = highest depth)
+      function getDepth(id, visited = new Set()) {
+        if (visited.has(id)) return 0;
+        visited.add(id);
+        const kids = childrenMap[id] || [];
+        if (kids.length === 0) return 0;
+        return 1 + Math.max(...kids.map((k) => getDepth(k, visited)));
+      }
+
+      // Get all parent IDs sorted deepest-first so we process bottom-up
+      const parentIds = Object.keys(childrenMap).map(Number);
+      const sorted = parentIds.sort((a, b) => getDepth(b) - getDepth(a));
+
+      let changed = false;
+      sorted.forEach((pid) => {
+        const parent = taskMap[pid];
+        if (!parent) return;
+        const kids = (childrenMap[pid] || []).map((id) => taskMap[id]).filter(Boolean);
+        if (kids.length === 0) return;
+
+        const newEnd = fmt(new Date(Math.max(...kids.map((c) => parseDate(c.end)))));
+        const newStart = fmt(new Date(Math.min(...kids.map((c) => parseDate(c.start)))));
+
+        if (newEnd !== parent.end || newStart !== parent.start) {
+          taskMap[pid] = { ...parent, end: newEnd, start: newStart };
+          changed = true;
+        }
+      });
+
+      return changed ? prev.map((t) => taskMap[t.id] || t) : prev;
     });
   }, [tasks, loading]);
 
@@ -368,17 +406,42 @@ export default function TaskTracker() {
     setNextId((n) => n + 1);
   };
 
+  // Helper: get depth of a task in the hierarchy
+  const getTaskDepth = useCallback((taskId, taskList) => {
+    let depth = 0;
+    let current = taskList.find((t) => t.id === taskId);
+    while (current && current.parentId && current.parentId !== 0) {
+      depth++;
+      current = taskList.find((t) => t.id === current.parentId);
+      if (depth > MAX_DEPTH) break; // safety
+    }
+    return depth;
+  }, []);
+
+  // Helper: get all descendant IDs recursively
+  const getDescendantIds = useCallback((taskId, taskList) => {
+    const ids = new Set();
+    const collect = (pid) => {
+      taskList.forEach((t) => { if (t.parentId === pid) { ids.add(t.id); collect(t.id); } });
+    };
+    collect(taskId);
+    return ids;
+  }, []);
+
   const addSubtask = (parentId) => {
     const parent = tasks.find((t) => t.id === parentId);
     if (!parent) return;
+    const parentDepth = getTaskDepth(parentId, tasks);
+    if (parentDepth >= MAX_DEPTH) return; // Can't nest deeper
+
     const newTask = { id: nextId, task: "", start: parent.start, end: parent.end, owner: parent.owner, bottleneck: "", status: "Not Started", parentId };
-    // Insert right after parent and its existing children
+    // Insert after parent and ALL its descendants
+    const descIds = getDescendantIds(parentId, tasks);
     const parentIdx = tasks.findIndex((t) => t.id === parentId);
     let insertIdx = parentIdx + 1;
-    while (insertIdx < tasks.length && tasks[insertIdx].parentId === parentId) insertIdx++;
+    while (insertIdx < tasks.length && descIds.has(tasks[insertIdx].id)) insertIdx++;
     setTasks((prev) => { const n = [...prev]; n.splice(insertIdx, 0, newTask); return n; });
     setNextId((n) => n + 1);
-    // Make sure parent is expanded
     setCollapsedIds((prev) => { const n = new Set(prev); n.delete(parentId); return n; });
   };
 
@@ -387,31 +450,58 @@ export default function TaskTracker() {
       const idx = prev.findIndex((t) => t.id === taskId);
       if (idx <= 0) return prev;
       const task = prev[idx];
-      if (task.parentId && task.parentId !== 0) return prev; // Already a subtask
-      // Find the nearest top-level task above
-      let parentIdx = idx - 1;
-      while (parentIdx >= 0 && prev[parentIdx].parentId !== 0 && prev[parentIdx].parentId) parentIdx--;
-      if (parentIdx < 0) return prev;
-      const parentId = prev[parentIdx].parentId === 0 || !prev[parentIdx].parentId ? prev[parentIdx].id : null;
-      if (!parentId) return prev;
-      // Move task to be child of parent — remove from current position and insert after parent's children
-      const updated = prev.map((t) => (t.id === taskId ? { ...t, parentId } : t));
-      const removed = updated.filter((t) => t.id !== taskId);
-      const pIdx = removed.findIndex((t) => t.id === parentId);
-      let insIdx = pIdx + 1;
-      while (insIdx < removed.length && removed[insIdx].parentId === parentId) insIdx++;
-      removed.splice(insIdx, 0, { ...task, parentId });
-      return removed;
+      const taskDepth = getTaskDepth(taskId, prev);
+      if (taskDepth >= MAX_DEPTH) return prev; // Already at max depth
+
+      // Find the nearest task above at the same depth (same parentId) to become the new parent
+      let siblingIdx = idx - 1;
+      while (siblingIdx >= 0) {
+        const sib = prev[siblingIdx];
+        if (sib.parentId === task.parentId && sib.id !== taskId) break;
+        // Don't skip past tasks at a higher level
+        if (getTaskDepth(sib.id, prev) < taskDepth) return prev; // No sibling found above
+        siblingIdx--;
+      }
+      if (siblingIdx < 0) return prev;
+
+      const newParentId = prev[siblingIdx].id;
+      // Move task + its descendants
+      const descIds = getDescendantIds(taskId, prev);
+      const movedIds = new Set([taskId, ...descIds]);
+      const movedTasks = prev.filter((t) => movedIds.has(t.id));
+      const remaining = prev.filter((t) => !movedIds.has(t.id));
+
+      // Update parent of the task being indented
+      movedTasks[0] = { ...movedTasks[0], parentId: newParentId };
+
+      // Insert after new parent and its existing descendants
+      const newParentDescIds = getDescendantIds(newParentId, remaining);
+      const npIdx = remaining.findIndex((t) => t.id === newParentId);
+      let insIdx = npIdx + 1;
+      while (insIdx < remaining.length && newParentDescIds.has(remaining[insIdx].id)) insIdx++;
+      remaining.splice(insIdx, 0, ...movedTasks);
+      return remaining;
     });
   };
 
   const outdentTask = (taskId) => {
-    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, parentId: 0 } : t)));
+    setTasks((prev) => {
+      const task = prev.find((t) => t.id === taskId);
+      if (!task || !task.parentId || task.parentId === 0) return prev; // Already top-level
+      const parent = prev.find((t) => t.id === task.parentId);
+      if (!parent) return prev;
+      // Move to grandparent level (parent's parentId)
+      const newParentId = parent.parentId || 0;
+      return prev.map((t) => (t.id === taskId ? { ...t, parentId: newParentId } : t));
+    });
   };
 
   const deleteTask = (id) => {
-    // Also remove children
-    setTasks((prev) => prev.filter((t) => t.id !== id && t.parentId !== id));
+    // Recursively remove all descendants
+    setTasks((prev) => {
+      const descIds = getDescendantIds(id, prev);
+      return prev.filter((t) => t.id !== id && !descIds.has(t.id));
+    });
   };
 
   const toggleCollapse = (id) => {
@@ -518,10 +608,11 @@ export default function TaskTracker() {
                 const globalIndex = tasks.findIndex((x) => x.id === t.id);
                 const isDragOver = dragOverIndex === globalIndex && dragIndex !== globalIndex;
                 const isSubtask = t._depth > 0;
+                const depthBg = t._depth === 0 ? (i % 2 === 0 ? "#fff" : "#FAFBFC") : t._depth === 1 ? "#FAFBFE" : t._depth === 2 ? "#F8F9FE" : "#F5F7FE";
 
                 return (
                   <tr key={t.id} draggable={isAllSelected} onDragStart={(e) => handleDragStart(e, globalIndex)} onDragEnter={(e) => handleDragEnter(e, globalIndex)} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, globalIndex)} onDragEnd={handleDragEnd}
-                    style={{ borderBottom: "1px solid #F1F5F9", background: isDragOver ? "#EEF2FF" : isSubtask ? "#FAFBFE" : i % 2 === 0 ? "#fff" : "#FAFBFC", borderTop: isDragOver ? "2px solid #6366F1" : "none", borderLeft: isSubtask ? "3px solid " + oc.bg + "44" : "3px solid transparent" }}>
+                    style={{ borderBottom: "1px solid #F1F5F9", background: isDragOver ? "#EEF2FF" : depthBg, borderTop: isDragOver ? "2px solid #6366F1" : "none", borderLeft: isSubtask ? `${Math.min(t._depth + 2, 4)}px solid ${oc.bg}${t._depth === 1 ? "44" : t._depth === 2 ? "33" : "22"}` : "3px solid transparent" }}>
                     {/* Drag handle */}
                     <td style={{ padding: "6px 2px 6px 6px", width: 30, cursor: isAllSelected ? "grab" : "default" }}>
                       {isAllSelected && <span style={{ color: "#CBD5E1", fontSize: 14, userSelect: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>⠿</span>}
@@ -533,27 +624,28 @@ export default function TaskTracker() {
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
                         {/* Collapse toggle for parents */}
                         {t._hasChildren && (
-                          <button onClick={() => toggleCollapse(t.id)} title={t._isCollapsed ? "Expand subtasks" : "Collapse subtasks"}
+                          <button onClick={() => toggleCollapse(t.id)} title={t._isCollapsed ? "Expand" : "Collapse"}
                             style={{ border: "none", background: "#F1F5F9", cursor: "pointer", fontSize: 10, color: "#475569", padding: "2px 4px", lineHeight: 1, fontWeight: 700, borderRadius: 4 }}
                             onMouseEnter={(e) => (e.currentTarget.style.background = "#E2E8F0")} onMouseLeave={(e) => (e.currentTarget.style.background = "#F1F5F9")}>
                             {t._isCollapsed ? "▶" : "▼"}
                           </button>
                         )}
-                        {/* Indent / Outdent */}
-                        {!isSubtask && !t._hasChildren && (
-                          <button onClick={() => indentTask(t.id)} title="Make subtask (indent)"
+                        {/* Indent → (available if depth < MAX_DEPTH and no children, to avoid exceeding depth) */}
+                        {t._depth < MAX_DEPTH && !t._hasChildren && (
+                          <button onClick={() => indentTask(t.id)} title="Indent deeper"
                             style={{ border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 11, color: "#475569", padding: "2px 5px", lineHeight: 1, borderRadius: 4, fontWeight: 600 }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = "#EEF2FF"; e.currentTarget.style.color = "#4F46E5"; e.currentTarget.style.borderColor = "#C7D2FE"; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.color = "#475569"; e.currentTarget.style.borderColor = "#E2E8F0"; }}>→</button>
                         )}
-                        {isSubtask && (
-                          <button onClick={() => outdentTask(t.id)} title="Promote to task (outdent)"
+                        {/* Outdent ← (available if depth > 0) */}
+                        {t._depth > 0 && (
+                          <button onClick={() => outdentTask(t.id)} title="Outdent one level"
                             style={{ border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 11, color: "#475569", padding: "2px 5px", lineHeight: 1, borderRadius: 4, fontWeight: 600 }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = "#EEF2FF"; e.currentTarget.style.color = "#4F46E5"; e.currentTarget.style.borderColor = "#C7D2FE"; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.color = "#475569"; e.currentTarget.style.borderColor = "#E2E8F0"; }}>←</button>
                         )}
-                        {/* Add subtask */}
-                        {!isSubtask && (
+                        {/* Add subtask + (available if depth < MAX_DEPTH) */}
+                        {t._depth < MAX_DEPTH && (
                           <button onClick={() => addSubtask(t.id)} title="Add subtask"
                             style={{ border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", fontSize: 12, color: "#475569", padding: "2px 5px", lineHeight: 1, borderRadius: 4, fontWeight: 700 }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = "#D1FAE5"; e.currentTarget.style.color = "#065F46"; e.currentTarget.style.borderColor = "#A7F3D0"; }}
@@ -562,11 +654,11 @@ export default function TaskTracker() {
                       </div>
                     </td>
                     {/* Task name */}
-                    <td style={{ padding: "6px 8px", paddingLeft: isSubtask ? 8 : 8, minWidth: 200 }}>
+                    <td style={{ padding: "6px 8px", minWidth: 200 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 4, paddingLeft: t._depth * 20 }}>
-                        {isSubtask && <span style={{ color: "#CBD5E1", fontSize: 11, flexShrink: 0 }}>└</span>}
-                        <input value={t.task} onChange={(e) => updateTask(t.id, "task", e.target.value)} placeholder={isSubtask ? "Subtask..." : "Task name..."}
-                          style={{ width: "100%", border: "1px solid transparent", borderRadius: 6, padding: "5px 8px", fontSize: 13, fontWeight: t._hasChildren ? 700 : 500, color: t._hasChildren ? "#0F172A" : "#1E293B", background: "transparent", outline: "none" }}
+                        {t._depth > 0 && <span style={{ color: t._depth === 1 ? "#CBD5E1" : t._depth === 2 ? "#D4D4D8" : "#E4E4E7", fontSize: 11, flexShrink: 0 }}>└</span>}
+                        <input value={t.task} onChange={(e) => updateTask(t.id, "task", e.target.value)} placeholder={t._depth === 0 ? "Task name..." : t._depth === 1 ? "Subtask..." : t._depth === 2 ? "Sub-subtask..." : "Sub-sub-subtask..."}
+                          style={{ width: "100%", border: "1px solid transparent", borderRadius: 6, padding: "5px 8px", fontSize: t._depth === 0 ? 13 : 12, fontWeight: t._hasChildren ? 700 : t._depth === 0 ? 500 : 400, color: t._hasChildren ? "#0F172A" : "#1E293B", background: "transparent", outline: "none" }}
                           onFocus={(e) => (e.target.style.border = "1px solid #CBD5E1")} onBlur={(e) => (e.target.style.border = "1px solid transparent")} />
                       </div>
                     </td>
@@ -602,7 +694,7 @@ export default function TaskTracker() {
           </table>
           <div style={{ padding: "8px 12px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <button onClick={addTask} style={{ border: "1px dashed #CBD5E1", background: "none", borderRadius: 8, padding: "6px 16px", fontSize: 12, fontWeight: 600, color: "#64748B", cursor: "pointer" }}>+ Add Task</button>
-            <span style={{ fontSize: 11, color: "#94A3B8" }}>→ indent as subtask · ← promote to task · + add subtask · parent dates auto-extend</span>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>→ indent (up to 4 levels) · ← outdent · + add subtask · parent dates auto-sync</span>
           </div>
         </div>
       )}
@@ -633,9 +725,11 @@ export default function TaskTracker() {
             </div>
             <div style={{ display: "flex", gap: 14 }}>
               {[
-                { label: "Parent task", sty: { width: 20, height: 7, borderRadius: 2, background: "#3B82F622", border: "1.5px solid #3B82F688" } },
+                { label: "Parent", sty: { width: 20, height: 8, borderRadius: 2, background: "#3B82F622", border: "1.5px solid #3B82F688" } },
                 { label: "Task", sty: { width: 20, height: 8, borderRadius: 3, background: "linear-gradient(90deg, #3B82F6EE, #3B82F6CC)", boxShadow: "0 1px 3px #3B82F644" } },
-                { label: "Subtask", sty: { width: 20, height: 6, borderRadius: 3, background: "linear-gradient(90deg, #3B82F699, #3B82F677)", border: "1px solid #3B82F655" } },
+                { label: "Subtask", sty: { width: 20, height: 6, borderRadius: 3, background: "linear-gradient(90deg, #3B82F6BB, #3B82F699)", border: "1px solid #3B82F677" } },
+                { label: "Sub-sub", sty: { width: 20, height: 5, borderRadius: 3, background: "linear-gradient(90deg, #3B82F688, #3B82F666)", border: "1px solid #3B82F655" } },
+                { label: "Deepest", sty: { width: 20, height: 4, borderRadius: 3, background: "linear-gradient(90deg, #3B82F666, #3B82F644)", border: "1px solid #3B82F644" } },
                 { label: "Blocked", sty: { width: 20, height: 7, borderRadius: 3, background: "repeating-linear-gradient(135deg, #EF4444CC, #EF4444CC 3px, #EF444466 3px, #EF444466 6px)" } },
               ].map((l) => (<div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#94A3B8" }}><div style={l.sty} />{l.label}</div>))}
             </div>
