@@ -150,7 +150,7 @@ function TeamPanel({ team, onClose, onSave }) {
 }
 
 // ─── Gantt Chart ────────────────────────────────────────────────────
-function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ownerColors }) {
+function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ownerColors, onScrollDays }) {
   const calStart = parseDate(calendarStart);
   const dates = [];
   for (let i = 0; i < calendarDays; i++) dates.push(fmt(addDays(calStart, i)));
@@ -158,6 +158,23 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
   const dayWidth = Math.max(44, Math.floor(780 / calendarDays));
   const rowHeight = 36;
   const labelWidth = 220;
+  const ganttRef = useRef(null);
+
+  // Scroll wheel to navigate dates
+  useEffect(() => {
+    const el = ganttRef.current;
+    if (!el) return;
+    const handler = (e) => {
+      // Only handle vertical scroll (shift+wheel or pure wheel)
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        const days = e.deltaY > 0 ? 3 : -3;
+        onScrollDays(days);
+      }
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, [onScrollDays]);
 
   const [drag, setDrag] = useState(null);
   const snapToDay = useCallback((px) => Math.round(px / dayWidth), [dayWidth]);
@@ -205,7 +222,7 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
   const handleStyle = (side) => ({ position: "absolute", top: 0, [side]: 0, width: 8, height: "100%", cursor: side === "left" ? "w-resize" : "e-resize", borderRadius: side === "left" ? "5px 0 0 5px" : "0 5px 5px 0", background: "transparent", zIndex: 4 });
 
   return (
-    <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", userSelect: drag ? "none" : "auto" }}>
+    <div ref={ganttRef} style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", userSelect: drag ? "none" : "auto" }}>
       <div style={{ display: "flex", minWidth: labelWidth + calendarDays * dayWidth }}>
         <div style={{ width: labelWidth, minWidth: labelWidth, borderRight: "2px solid #E2E8F0", background: "#F8FAFC" }}>
           <div style={{ height: 24, borderBottom: "1px solid #E2E8F0" }} />
@@ -510,15 +527,76 @@ export default function TaskTracker() {
     });
   };
 
+  const duplicateTask = (id) => {
+    setTasks((prev) => {
+      const task = prev.find((t) => t.id === id);
+      if (!task) return prev;
+      // Collect task + all descendants
+      const descIds = getDescendantIds(id, prev);
+      const allToCopy = [task, ...prev.filter((t) => descIds.has(t.id))];
+      // Create ID mapping: old → new
+      let nid = Math.max(...prev.map((t) => t.id)) + 1;
+      const idMap = {};
+      allToCopy.forEach((t) => { idMap[t.id] = nid++; });
+      // Clone with new IDs, remap parentIds
+      const cloned = allToCopy.map((t) => ({
+        ...t,
+        id: idMap[t.id],
+        task: t.id === id ? `${t.task} (copy)` : t.task,
+        parentId: t.parentId && idMap[t.parentId] ? idMap[t.parentId] : t.parentId,
+      }));
+      // Insert right after the original block
+      const origIdx = prev.findIndex((t) => t.id === id);
+      let insertAfter = origIdx + 1;
+      while (insertAfter < prev.length && descIds.has(prev[insertAfter].id)) insertAfter++;
+      const result = [...prev];
+      result.splice(insertAfter, 0, ...cloned);
+      return result;
+    });
+    setNextId((n) => n + 50); // Bump to avoid collisions
+  };
+
   const toggleCollapse = (id) => {
     setCollapsedIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
 
   // Table row drag
-  const handleDragStart = useCallback((e, idx) => { setDragIndex(idx); dragNode.current = e.target.closest("tr"); e.dataTransfer.effectAllowed = "move"; setTimeout(() => { if (dragNode.current) dragNode.current.style.opacity = "0.4"; }, 0); }, []);
+  const handleDragStart = useCallback((e, idx, taskId) => { setDragIndex(idx); dragNode.current = e.target.closest("tr"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("taskId", String(taskId)); setTimeout(() => { if (dragNode.current) dragNode.current.style.opacity = "0.4"; }, 0); }, []);
   const handleDragEnter = useCallback((e, idx) => { e.preventDefault(); if (dragIndex === null || dragIndex === idx) return; setDragOverIndex(idx); }, [dragIndex]);
   const handleDragOver = useCallback((e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }, []);
-  const handleDrop = useCallback((e, dropIdx) => { e.preventDefault(); if (dragIndex === null || dragIndex === dropIdx) return; setTasks((prev) => { const u = [...prev]; const [d] = u.splice(dragIndex, 1); u.splice(dropIdx, 0, d); return u; }); setDragIndex(null); setDragOverIndex(null); }, [dragIndex]);
+  const handleDrop = useCallback((e, dropIdx, dropTask) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === dropIdx) return;
+    setTasks((prev) => {
+      const draggedTask = prev[dragIndex];
+      if (!draggedTask) return prev;
+      const u = [...prev];
+      const [d] = u.splice(dragIndex, 1);
+      const actualDropIdx = dropIdx > dragIndex ? dropIdx - 1 : dropIdx;
+
+      // Auto-subtask: if dropping onto a parent task, make dragged task a child
+      if (dropTask?.id) {
+        const targetInPrev = prev.find((t) => t.id === dropTask.id);
+        if (targetInPrev) {
+          const hasKids = prev.some((c) => c.parentId === targetInPrev.id);
+          const targetDepth = getTaskDepth(targetInPrev.id, prev);
+          if (hasKids && targetDepth < MAX_DEPTH && draggedTask.parentId !== targetInPrev.id) {
+            d.parentId = targetInPrev.id;
+            const descIds = getDescendantIds(targetInPrev.id, u);
+            let insIdx = u.findIndex((t) => t.id === targetInPrev.id) + 1;
+            while (insIdx < u.length && descIds.has(u[insIdx].id)) insIdx++;
+            u.splice(insIdx, 0, d);
+            return u;
+          }
+        }
+      }
+
+      // Normal reorder
+      u.splice(actualDropIdx, 0, d);
+      return u;
+    });
+    setDragIndex(null); setDragOverIndex(null);
+  }, [dragIndex, getTaskDepth, getDescendantIds]);
   const handleDragEnd = useCallback(() => { if (dragNode.current) dragNode.current.style.opacity = "1"; setDragIndex(null); setDragOverIndex(null); dragNode.current = null; }, []);
 
   const isAllSelected = filterOwners.size === 0;
@@ -617,7 +695,7 @@ export default function TaskTracker() {
                 const depthBg = t._depth === 0 ? (i % 2 === 0 ? "#fff" : "#FAFBFC") : t._depth === 1 ? "#FAFBFE" : t._depth === 2 ? "#F8F9FE" : "#F5F7FE";
 
                 return (
-                  <tr key={t.id} draggable={isAllSelected} onDragStart={(e) => handleDragStart(e, globalIndex)} onDragEnter={(e) => handleDragEnter(e, globalIndex)} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, globalIndex)} onDragEnd={handleDragEnd}
+                  <tr key={t.id} draggable={isAllSelected} onDragStart={(e) => handleDragStart(e, globalIndex, t.id)} onDragEnter={(e) => handleDragEnter(e, globalIndex)} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, globalIndex, t)} onDragEnd={handleDragEnd}
                     style={{ borderBottom: "1px solid #F1F5F9", background: isDragOver ? "#EEF2FF" : depthBg, borderTop: isDragOver ? "2px solid #6366F1" : "none", borderLeft: isSubtask ? `${Math.min(t._depth + 2, 4)}px solid ${oc.bg}${t._depth === 1 ? "44" : t._depth === 2 ? "33" : "22"}` : "3px solid transparent" }}>
                     {/* Drag handle */}
                     <td style={{ padding: "6px 2px 6px 6px", width: 30, cursor: isAllSelected ? "grab" : "default" }}>
@@ -690,8 +768,11 @@ export default function TaskTracker() {
                         style={{ width: "100%", border: "1px solid transparent", borderRadius: 6, padding: "5px 8px", fontSize: 12, color: t.bottleneck ? "#DC2626" : "#94A3B8", fontStyle: t.bottleneck ? "normal" : "italic", background: t.bottleneck ? "#FEF2F2" : "transparent", outline: "none", fontWeight: t.bottleneck ? 500 : 400 }}
                         onFocus={(e) => (e.target.style.border = "1px solid #CBD5E1")} onBlur={(e) => (e.target.style.border = "1px solid transparent")} />
                     </td>
-                    <td style={{ padding: "6px 6px", width: 32 }}>
-                      <button onClick={() => deleteTask(t.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "#CBD5E1", fontSize: 16, padding: 2, borderRadius: 4, lineHeight: 1 }} onMouseEnter={(e) => (e.target.style.color = "#EF4444")} onMouseLeave={(e) => (e.target.style.color = "#CBD5E1")} title={t._hasChildren ? "Delete task & subtasks" : "Delete"}>×</button>
+                    <td style={{ padding: "6px 4px", width: 52 }}>
+                      <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                        <button onClick={() => duplicateTask(t.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "#CBD5E1", fontSize: 13, padding: 2, borderRadius: 4, lineHeight: 1 }} onMouseEnter={(e) => (e.target.style.color = "#6366F1")} onMouseLeave={(e) => (e.target.style.color = "#CBD5E1")} title="Duplicate task">⧉</button>
+                        <button onClick={() => deleteTask(t.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "#CBD5E1", fontSize: 16, padding: 2, borderRadius: 4, lineHeight: 1 }} onMouseEnter={(e) => (e.target.style.color = "#EF4444")} onMouseLeave={(e) => (e.target.style.color = "#CBD5E1")} title={t._hasChildren ? "Delete task & subtasks" : "Delete"}>×</button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -700,7 +781,7 @@ export default function TaskTracker() {
           </table>
           <div style={{ padding: "8px 12px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <button onClick={addTask} style={{ border: "1px dashed #CBD5E1", background: "none", borderRadius: 8, padding: "6px 16px", fontSize: 12, fontWeight: 600, color: "#64748B", cursor: "pointer" }}>+ Add Task</button>
-            <span style={{ fontSize: 11, color: "#94A3B8" }}>→ indent (up to 4 levels) · ← outdent · + add subtask · parent dates auto-sync</span>
+            <span style={{ fontSize: 11, color: "#94A3B8" }}>→ indent (up to 4 levels) · ← outdent · + add subtask · ⧉ duplicate · scroll Gantt to navigate · drag onto parent = auto-subtask</span>
           </div>
         </div>
       )}
@@ -724,7 +805,7 @@ export default function TaskTracker() {
               <button onClick={goNext} style={{ width: 28, height: 28, border: "1px solid #E2E8F0", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 14, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
             </div>
           </div>
-          <GanttChart displayList={displayList} calendarStart={calStart} calendarDays={calSpan} onUpdateTask={updateTask} ownerColors={ownerColors} />
+          <GanttChart displayList={displayList} calendarStart={calStart} calendarDays={calSpan} onUpdateTask={updateTask} ownerColors={ownerColors} onScrollDays={(days) => setCalStart((prev) => fmt(addDays(parseDate(prev), days)))} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {team.map((m) => (<div key={m.name} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#64748B" }}><div style={{ width: 10, height: 10, borderRadius: 3, background: getColorSet(m.color).bg }} />{m.name}</div>))}
