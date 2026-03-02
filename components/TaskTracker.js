@@ -59,14 +59,20 @@ function buildDisplayList(tasks, collapsedIds) {
   });
 
   const result = [];
-  const displayedIds = new Set();
+  const knownIds = new Set(); // includes both displayed AND hidden-by-collapse
 
   function addWithChildren(task, depth) {
     const children = childrenMap[task.id] || [];
     const hasChildren = children.length > 0;
     result.push({ ...task, _depth: depth, _hasChildren: hasChildren, _isCollapsed: collapsedIds.has(task.id) });
-    displayedIds.add(task.id);
-    if (!collapsedIds.has(task.id)) {
+    knownIds.add(task.id);
+    if (collapsedIds.has(task.id)) {
+      // Mark all descendants as known (hidden) so they don't appear as orphans
+      const markHidden = (parentId) => {
+        (childrenMap[parentId] || []).forEach((c) => { knownIds.add(c.id); markHidden(c.id); });
+      };
+      markHidden(task.id);
+    } else {
       children.forEach((child) => addWithChildren(child, depth + 1));
     }
   }
@@ -75,9 +81,9 @@ function buildDisplayList(tasks, collapsedIds) {
   const topLevel = tasks.filter((t) => !t.parentId || t.parentId === 0);
   topLevel.forEach((t) => addWithChildren(t, 0));
 
-  // Include orphaned tasks (parent was deleted)
+  // Include orphaned tasks (parent was deleted — not just collapsed)
   tasks.forEach((t) => {
-    if (!displayedIds.has(t.id)) {
+    if (!knownIds.has(t.id)) {
       result.push({ ...t, _depth: 0, _hasChildren: false, _isCollapsed: false, parentId: 0 });
     }
   });
@@ -159,22 +165,59 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
   const rowHeight = 36;
   const labelWidth = 220;
   const ganttRef = useRef(null);
+  const scrollAccum = useRef(0);
+  const panState = useRef(null);
 
-  // Scroll wheel to navigate dates
+  // Touchpad / wheel: horizontal scroll to navigate dates
   useEffect(() => {
     const el = ganttRef.current;
     if (!el) return;
+    const threshold = 80; // pixels of scroll before shifting 1 day (controls sensitivity)
     const handler = (e) => {
-      // Only handle vertical scroll (shift+wheel or pure wheel)
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        e.preventDefault();
-        const days = e.deltaY > 0 ? 3 : -3;
+      // Use horizontal delta (touchpad swipe left/right), or vertical if shift held
+      const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+      if (dx === 0) return;
+      e.preventDefault();
+      scrollAccum.current += dx;
+      if (Math.abs(scrollAccum.current) >= threshold) {
+        const days = scrollAccum.current > 0 ? 2 : -2;
         onScrollDays(days);
+        scrollAccum.current = 0;
       }
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
   }, [onScrollDays]);
+
+  // Mouse drag to pan the Gantt (click and drag on empty area)
+  const handleGanttPanStart = useCallback((e) => {
+    // Only on the background, not on bars
+    if (e.target !== e.currentTarget && e.target.closest("[data-gantt-bar]")) return;
+    panState.current = { startX: e.clientX, scrolled: 0 };
+    e.currentTarget.style.cursor = "grabbing";
+  }, []);
+
+  useEffect(() => {
+    if (!panState.current) return;
+    const handleMove = (e) => {
+      if (!panState.current) return;
+      const dx = e.clientX - panState.current.startX;
+      const threshold = 60;
+      const totalDelta = dx - panState.current.scrolled;
+      if (Math.abs(totalDelta) >= threshold) {
+        const days = totalDelta > 0 ? -1 : 1;
+        onScrollDays(days);
+        panState.current.scrolled = dx;
+      }
+    };
+    const handleUp = () => {
+      panState.current = null;
+      if (ganttRef.current) ganttRef.current.style.cursor = "";
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => { window.removeEventListener("mousemove", handleMove); window.removeEventListener("mouseup", handleUp); };
+  });
 
   const [drag, setDrag] = useState(null);
   const snapToDay = useCallback((px) => Math.round(px / dayWidth), [dayWidth]);
@@ -222,7 +265,7 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
   const handleStyle = (side) => ({ position: "absolute", top: 0, [side]: 0, width: 8, height: "100%", cursor: side === "left" ? "w-resize" : "e-resize", borderRadius: side === "left" ? "5px 0 0 5px" : "0 5px 5px 0", background: "transparent", zIndex: 4 });
 
   return (
-    <div ref={ganttRef} style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", userSelect: drag ? "none" : "auto" }}>
+    <div ref={ganttRef} onMouseDown={handleGanttPanStart} style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", userSelect: drag ? "none" : "auto", cursor: "grab" }}>
       <div style={{ display: "flex", minWidth: labelWidth + calendarDays * dayWidth }}>
         <div style={{ width: labelWidth, minWidth: labelWidth, borderRight: "2px solid #E2E8F0", background: "#F8FAFC" }}>
           <div style={{ height: 24, borderBottom: "1px solid #E2E8F0" }} />
@@ -275,7 +318,7 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
                 {dayLabels.map((d, i) => (<div key={i} style={{ width: dayWidth, minWidth: dayWidth, borderRight: "1px solid #F8FAFC", background: d.isToday ? "#EEF2FF22" : d.isWeekend ? "#FAFBFC" : "transparent" }} />))}
                 {todayIdx >= 0 && <div style={{ position: "absolute", top: 0, bottom: 0, left: todayIdx * dayWidth + dayWidth / 2, width: 1, background: "#4F46E544", zIndex: 1 }} />}
                 {isVisible && (
-                  <div onMouseDown={(e) => handleMouseDown(e, t.id, "move", t.start, t.end)}
+                  <div data-gantt-bar onMouseDown={(e) => handleMouseDown(e, t.id, "move", t.start, t.end)}
                     style={{
                       position: "absolute", top: barTop, left: visStart * dayWidth + 2, width: barDays * dayWidth - 4, height: barHeight,
                       borderRadius: rad,
@@ -322,8 +365,6 @@ export default function TaskTracker() {
   const [view, setView] = useState("both");
   const [showTeamPanel, setShowTeamPanel] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState(new Set());
-  const [dragIndex, setDragIndex] = useState(null);
-  const [dragOverIndex, setDragOverIndex] = useState(null);
   const dragNode = useRef(null);
   const [calStart, setCalStart] = useState(fmt(mon));
   const [calSpan, setCalSpan] = useState(14);
@@ -560,44 +601,49 @@ export default function TaskTracker() {
     setCollapsedIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
 
-  // Table row drag
-  const handleDragStart = useCallback((e, idx, taskId) => { setDragIndex(idx); dragNode.current = e.target.closest("tr"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("taskId", String(taskId)); setTimeout(() => { if (dragNode.current) dragNode.current.style.opacity = "0.4"; }, 0); }, []);
-  const handleDragEnter = useCallback((e, idx) => { e.preventDefault(); if (dragIndex === null || dragIndex === idx) return; setDragOverIndex(idx); }, [dragIndex]);
+  // Table row drag - use task IDs for reliability
+  const [dragTaskId, setDragTaskId] = useState(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState(null);
+  const handleDragStart = useCallback((e, taskId) => { setDragTaskId(taskId); dragNode.current = e.target.closest("tr"); e.dataTransfer.effectAllowed = "move"; setTimeout(() => { if (dragNode.current) dragNode.current.style.opacity = "0.4"; }, 0); }, []);
+  const handleDragEnter = useCallback((e, taskId) => { e.preventDefault(); if (dragTaskId === null || dragTaskId === taskId) return; setDragOverTaskId(taskId); }, [dragTaskId]);
   const handleDragOver = useCallback((e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }, []);
-  const handleDrop = useCallback((e, dropIdx, dropTask) => {
+  const handleDrop = useCallback((e, dropTaskId) => {
     e.preventDefault();
-    if (dragIndex === null || dragIndex === dropIdx) return;
+    if (dragTaskId === null || dragTaskId === dropTaskId) return;
     setTasks((prev) => {
-      const draggedTask = prev[dragIndex];
+      const dragIdx = prev.findIndex((t) => t.id === dragTaskId);
+      const draggedTask = prev[dragIdx];
       if (!draggedTask) return prev;
-      const u = [...prev];
-      const [d] = u.splice(dragIndex, 1);
-      const actualDropIdx = dropIdx > dragIndex ? dropIdx - 1 : dropIdx;
 
-      // Auto-subtask: if dropping onto a parent task, make dragged task a child
-      if (dropTask?.id) {
-        const targetInPrev = prev.find((t) => t.id === dropTask.id);
-        if (targetInPrev) {
-          const hasKids = prev.some((c) => c.parentId === targetInPrev.id);
-          const targetDepth = getTaskDepth(targetInPrev.id, prev);
-          if (hasKids && targetDepth < MAX_DEPTH && draggedTask.parentId !== targetInPrev.id) {
-            d.parentId = targetInPrev.id;
-            const descIds = getDescendantIds(targetInPrev.id, u);
-            let insIdx = u.findIndex((t) => t.id === targetInPrev.id) + 1;
-            while (insIdx < u.length && descIds.has(u[insIdx].id)) insIdx++;
-            u.splice(insIdx, 0, d);
-            return u;
-          }
-        }
+      // Check if drop target is a parent (has children)
+      const targetTask = prev.find((t) => t.id === dropTaskId);
+      if (!targetTask) return prev;
+      const targetHasKids = prev.some((c) => c.parentId === targetTask.id);
+      const targetDepth = getTaskDepth(targetTask.id, prev);
+
+      // Remove dragged task from its current position
+      const u = prev.filter((t) => t.id !== dragTaskId);
+      const d = { ...draggedTask };
+
+      if (targetHasKids && targetDepth < MAX_DEPTH && draggedTask.parentId !== targetTask.id) {
+        // Auto-subtask: make it a child of the target parent
+        d.parentId = targetTask.id;
+        // Insert after target and all its descendants
+        const descIds = getDescendantIds(targetTask.id, u);
+        let insIdx = u.findIndex((t) => t.id === targetTask.id) + 1;
+        while (insIdx < u.length && descIds.has(u[insIdx].id)) insIdx++;
+        u.splice(insIdx, 0, d);
+      } else {
+        // Normal reorder: insert at drop target position
+        const dropIdx = u.findIndex((t) => t.id === dropTaskId);
+        u.splice(dropIdx, 0, d);
       }
 
-      // Normal reorder
-      u.splice(actualDropIdx, 0, d);
       return u;
     });
-    setDragIndex(null); setDragOverIndex(null);
-  }, [dragIndex, getTaskDepth, getDescendantIds]);
-  const handleDragEnd = useCallback(() => { if (dragNode.current) dragNode.current.style.opacity = "1"; setDragIndex(null); setDragOverIndex(null); dragNode.current = null; }, []);
+    setDragTaskId(null); setDragOverTaskId(null);
+  }, [dragTaskId, getTaskDepth, getDescendantIds]);
+  const handleDragEnd = useCallback(() => { if (dragNode.current) dragNode.current.style.opacity = "1"; setDragTaskId(null); setDragOverTaskId(null); dragNode.current = null; }, []);
 
   const isAllSelected = filterOwners.size === 0;
   const filtered = isAllSelected ? tasks : tasks.filter((t) => filterOwners.has(t.owner));
@@ -689,13 +735,12 @@ export default function TaskTracker() {
               {displayList.map((t, i) => {
                 const sStyle = STATUS_STYLE[t.status] || STATUS_STYLE["Not Started"];
                 const oc = ownerColors[t.owner] || { bg: "#6B7280", light: "#F3F4F6", text: "#374151" };
-                const globalIndex = tasks.findIndex((x) => x.id === t.id);
-                const isDragOver = dragOverIndex === globalIndex && dragIndex !== globalIndex;
+                const isDragOver = dragOverTaskId === t.id && dragTaskId !== t.id;
                 const isSubtask = t._depth > 0;
                 const depthBg = t._depth === 0 ? (i % 2 === 0 ? "#fff" : "#FAFBFC") : t._depth === 1 ? "#FAFBFE" : t._depth === 2 ? "#F8F9FE" : "#F5F7FE";
 
                 return (
-                  <tr key={t.id} draggable={isAllSelected} onDragStart={(e) => handleDragStart(e, globalIndex, t.id)} onDragEnter={(e) => handleDragEnter(e, globalIndex)} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, globalIndex, t)} onDragEnd={handleDragEnd}
+                  <tr key={t.id} draggable={isAllSelected} onDragStart={(e) => handleDragStart(e, t.id)} onDragEnter={(e) => handleDragEnter(e, t.id)} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, t.id)} onDragEnd={handleDragEnd}
                     style={{ borderBottom: "1px solid #F1F5F9", background: isDragOver ? "#EEF2FF" : depthBg, borderTop: isDragOver ? "2px solid #6366F1" : "none", borderLeft: isSubtask ? `${Math.min(t._depth + 2, 4)}px solid ${oc.bg}${t._depth === 1 ? "44" : t._depth === 2 ? "33" : "22"}` : "3px solid transparent" }}>
                     {/* Drag handle */}
                     <td style={{ padding: "6px 2px 6px 6px", width: 30, cursor: isAllSelected ? "grab" : "default" }}>
