@@ -156,7 +156,7 @@ function TeamPanel({ team, onClose, onSave }) {
 }
 
 // ─── Gantt Chart ────────────────────────────────────────────────────
-function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ownerColors, onScrollDays }) {
+function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ownerColors, onScrollDays, onToggleCollapse }) {
   const calStart = parseDate(calendarStart);
   const dates = [];
   for (let i = 0; i < calendarDays; i++) dates.push(fmt(addDays(calStart, i)));
@@ -271,8 +271,13 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
           <div style={{ height: 24, borderBottom: "1px solid #E2E8F0" }} />
           <div style={{ height: 40, display: "flex", alignItems: "center", padding: "0 12px", borderBottom: "2px solid #E2E8F0", fontSize: 10, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.8 }}>Task / Owner</div>
           {displayList.map((t) => (
-            <div key={t.id} style={{ height: rowHeight, display: "flex", alignItems: "center", padding: "0 10px", paddingLeft: 10 + t._depth * 20, borderBottom: "1px solid #F1F5F9", gap: 6 }}>
-              {t._depth > 0 && <span style={{ color: "#CBD5E1", fontSize: 10, marginRight: 2 }}>└</span>}
+            <div key={t.id} style={{ height: rowHeight, display: "flex", alignItems: "center", padding: "0 10px", paddingLeft: 6 + t._depth * 16, borderBottom: "1px solid #F1F5F9", gap: 4, cursor: t._hasChildren ? "pointer" : "default" }}
+              onClick={() => { if (t._hasChildren && onToggleCollapse) onToggleCollapse(t.id); }}>
+              {t._hasChildren ? (
+                <span style={{ fontSize: 8, color: "#64748B", fontWeight: 700, flexShrink: 0, width: 12, textAlign: "center" }}>{t._isCollapsed ? "▶" : "▼"}</span>
+              ) : t._depth > 0 ? (
+                <span style={{ color: "#CBD5E1", fontSize: 10, flexShrink: 0, width: 12, textAlign: "center" }}>└</span>
+              ) : <span style={{ width: 12, flexShrink: 0 }} />}
               <div style={{ width: 7, height: 7, borderRadius: "50%", background: ownerColors[t.owner]?.bg || "#94A3B8", flexShrink: 0 }} />
               <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: t._hasChildren ? 700 : 500, color: t._hasChildren ? "#0F172A" : "#334155" }}>{t.task || "Untitled"}</div>
             </div>
@@ -365,6 +370,7 @@ export default function TaskTracker() {
   const [view, setView] = useState("both");
   const [showTeamPanel, setShowTeamPanel] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState(new Set());
+  const [ganttCollapsedIds, setGanttCollapsedIds] = useState(new Set());
   const dragNode = useRef(null);
   const [calStart, setCalStart] = useState(fmt(mon));
   const [calSpan, setCalSpan] = useState(14);
@@ -648,7 +654,7 @@ export default function TaskTracker() {
   const isAllSelected = filterOwners.size === 0;
   const filtered = isAllSelected ? tasks : tasks.filter((t) => filterOwners.has(t.owner));
   const tableDisplayList = useMemo(() => buildDisplayList(filtered, collapsedIds), [filtered, collapsedIds]);
-  const ganttDisplayList = useMemo(() => buildDisplayList(filtered, new Set()), [filtered]);
+  const ganttDisplayList = useMemo(() => buildDisplayList(filtered, ganttCollapsedIds), [filtered, ganttCollapsedIds]);
 
   const stats = { total: filtered.length, done: filtered.filter((t) => t.status === "Done").length, blocked: filtered.filter((t) => t.status === "Blocked").length, inProgress: filtered.filter((t) => t.status === "In Progress").length };
 
@@ -863,7 +869,7 @@ export default function TaskTracker() {
               <button onClick={goNext} style={{ width: 28, height: 28, border: "1px solid #E2E8F0", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 14, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
             </div>
           </div>
-          <GanttChart displayList={ganttDisplayList} calendarStart={calStart} calendarDays={calSpan} onUpdateTask={updateTask} ownerColors={ownerColors} onScrollDays={(days) => setCalStart((prev) => fmt(addDays(parseDate(prev), days)))} />
+          <GanttChart displayList={ganttDisplayList} calendarStart={calStart} calendarDays={calSpan} onUpdateTask={updateTask} ownerColors={ownerColors} onScrollDays={(days) => setCalStart((prev) => fmt(addDays(parseDate(prev), days)))} onToggleCollapse={(id) => setGanttCollapsedIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {team.map((m) => (<div key={m.name} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#64748B" }}><div style={{ width: 10, height: 10, borderRadius: 3, background: getColorSet(m.color).bg }} />{m.name}</div>))}
