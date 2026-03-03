@@ -647,7 +647,8 @@ export default function TaskTracker() {
 
   const isAllSelected = filterOwners.size === 0;
   const filtered = isAllSelected ? tasks : tasks.filter((t) => filterOwners.has(t.owner));
-  const displayList = useMemo(() => buildDisplayList(filtered, collapsedIds), [filtered, collapsedIds]);
+  const tableDisplayList = useMemo(() => buildDisplayList(filtered, collapsedIds), [filtered, collapsedIds]);
+  const ganttDisplayList = useMemo(() => buildDisplayList(filtered, new Set()), [filtered]);
 
   const stats = { total: filtered.length, done: filtered.filter((t) => t.status === "Done").length, blocked: filtered.filter((t) => t.status === "Blocked").length, inProgress: filtered.filter((t) => t.status === "In Progress").length };
 
@@ -732,7 +733,7 @@ export default function TaskTracker() {
               </tr>
             </thead>
             <tbody>
-              {displayList.map((t, i) => {
+              {tableDisplayList.map((t, i) => {
                 const sStyle = STATUS_STYLE[t.status] || STATUS_STYLE["Not Started"];
                 const oc = ownerColors[t.owner] || { bg: "#6B7280", light: "#F3F4F6", text: "#374151" };
                 const isDragOver = dragOverTaskId === t.id && dragTaskId !== t.id;
@@ -839,8 +840,18 @@ export default function TaskTracker() {
               <h3 style={{ margin: 0, fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: "#94A3B8", fontWeight: 700 }}>Gantt Chart</h3>
               <span style={{ fontSize: 13, fontWeight: 600, color: "#334155" }}>{rangeLabel}</span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ display: "flex", borderRadius: 6, border: "1px solid #E2E8F0", overflow: "hidden", marginRight: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {/* Date range picker */}
+              <div style={{ display: "flex", alignItems: "center", gap: 4, background: "#F8FAFC", borderRadius: 6, padding: "3px 8px", border: "1px solid #E2E8F0" }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8" }}>From</span>
+                <input type="date" value={calStart} onChange={(e) => { if (e.target.value) setCalStart(e.target.value); }}
+                  style={{ border: "none", background: "transparent", fontSize: 11, color: "#334155", outline: "none", fontWeight: 500, cursor: "pointer" }} />
+                <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8", marginLeft: 4 }}>To</span>
+                <input type="date" value={fmt(addDays(parseDate(calStart), calSpan - 1))} onChange={(e) => { if (e.target.value) { const days = diffDays(parseDate(e.target.value), parseDate(calStart)) + 1; if (days >= 3) setCalSpan(days); } }}
+                  style={{ border: "none", background: "transparent", fontSize: 11, color: "#334155", outline: "none", fontWeight: 500, cursor: "pointer" }} />
+              </div>
+              {/* Preset spans */}
+              <div style={{ display: "flex", borderRadius: 6, border: "1px solid #E2E8F0", overflow: "hidden" }}>
                 {[[7, "1W"], [14, "2W"], [21, "3W"], [30, "1M"]].map(([d, l]) => (
                   <button key={d} onClick={() => setCalSpan(d)} style={{ padding: "4px 10px", fontSize: 10, fontWeight: 600, border: "none", cursor: "pointer", background: calSpan === d ? "#1E293B" : "#fff", color: calSpan === d ? "#fff" : "#64748B" }}>{l}</button>
                 ))}
@@ -850,7 +861,7 @@ export default function TaskTracker() {
               <button onClick={goNext} style={{ width: 28, height: 28, border: "1px solid #E2E8F0", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 14, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
             </div>
           </div>
-          <GanttChart displayList={displayList} calendarStart={calStart} calendarDays={calSpan} onUpdateTask={updateTask} ownerColors={ownerColors} onScrollDays={(days) => setCalStart((prev) => fmt(addDays(parseDate(prev), days)))} />
+          <GanttChart displayList={ganttDisplayList} calendarStart={calStart} calendarDays={calSpan} onUpdateTask={updateTask} ownerColors={ownerColors} onScrollDays={(days) => setCalStart((prev) => fmt(addDays(parseDate(prev), days)))} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {team.map((m) => (<div key={m.name} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#64748B" }}><div style={{ width: 10, height: 10, borderRadius: 3, background: getColorSet(m.color).bg }} />{m.name}</div>))}
