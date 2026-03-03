@@ -727,7 +727,7 @@ export default function TaskTracker() {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1020, fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#1E293B" }}>
-                {["", "#", "Subtask", "Task", "Owner", "Start", "End", "Status", "Bottleneck / Notes", "Actions"].map((h, i) => (
+                {["", "#", "Subtask", "Task", "Owner", "Start", "End", "Status", "Bottleneck / Notes", "Copy / Delete"].map((h, i) => (
                   <th key={i} style={{ padding: "10px 6px", textAlign: i === 2 ? "center" : "left", color: "#E2E8F0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, whiteSpace: "nowrap", width: i === 0 ? 30 : i === 1 ? 32 : i === 2 ? 56 : i === 9 ? 52 : undefined }}>{h}</th>
                 ))}
               </tr>
@@ -845,10 +845,12 @@ export default function TaskTracker() {
               <div style={{ display: "flex", alignItems: "center", gap: 4, background: "#F8FAFC", borderRadius: 6, padding: "3px 8px", border: "1px solid #E2E8F0" }}>
                 <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8" }}>From</span>
                 <input type="date" value={calStart} onChange={(e) => { if (e.target.value) setCalStart(e.target.value); }}
-                  style={{ border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, color: "#334155", outline: "none", fontWeight: 500, cursor: "pointer", borderRadius: 4, padding: "3px 6px", width: 120 }} />
+                  onClick={(e) => { try { e.target.showPicker(); } catch(err) {} }}
+                  style={{ border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, color: "#334155", outline: "none", fontWeight: 500, cursor: "pointer", borderRadius: 4, padding: "3px 6px", width: 120, WebkitAppearance: "none" }} />
                 <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8", marginLeft: 4 }}>To</span>
                 <input type="date" value={fmt(addDays(parseDate(calStart), calSpan - 1))} onChange={(e) => { if (e.target.value) { const days = diffDays(parseDate(e.target.value), parseDate(calStart)) + 1; if (days >= 3) setCalSpan(days); } }}
-                  style={{ border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, color: "#334155", outline: "none", fontWeight: 500, cursor: "pointer", borderRadius: 4, padding: "3px 6px", width: 120 }} />
+                  onClick={(e) => { try { e.target.showPicker(); } catch(err) {} }}
+                  style={{ border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, color: "#334155", outline: "none", fontWeight: 500, cursor: "pointer", borderRadius: 4, padding: "3px 6px", width: 120, WebkitAppearance: "none" }} />
               </div>
               {/* Preset spans */}
               <div style={{ display: "flex", borderRadius: 6, border: "1px solid #E2E8F0", overflow: "hidden" }}>
