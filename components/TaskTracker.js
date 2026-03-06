@@ -361,208 +361,7 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
   );
 }
 
-// ─── Team Workload Heatmap ──────────────────────────────────────────
-function TeamWorkload({ tasks, team, ownerColors }) {
-  const [wlMonth, setWlMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-  const [wlStart, setWlStart] = useState("");
-  const [wlEnd, setWlEnd] = useState("");
 
-  // Generate dates for the month
-  const year = wlMonth.getFullYear();
-  const month = wlMonth.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const allDates = [];
-  for (let d = 1; d <= daysInMonth; d++) allDates.push(new Date(year, month, d));
-
-  // Filter dates if custom range is set
-  const filteredDates = (wlStart && wlEnd)
-    ? allDates.filter((d) => fmt(d) >= wlStart && fmt(d) <= wlEnd)
-    : allDates;
-
-  const monthLabel = wlMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-
-  // Only count leaf tasks (tasks without children) to avoid double-counting
-  const parentIds = new Set();
-  tasks.forEach((t) => { if (t.parentId && t.parentId !== 0) parentIds.add(t.parentId); });
-  const leafTasks = tasks.filter((t) => !parentIds.has(t.id));
-
-  // Build workload map: { ownerName: { "2026-03-01": count } }
-  const workloadMap = {};
-  team.forEach((m) => { workloadMap[m.name] = {}; });
-  leafTasks.forEach((t) => {
-    if (!t.owner || !t.start || !t.end) return;
-    if (!workloadMap[t.owner]) workloadMap[t.owner] = {};
-    const s = parseDate(t.start);
-    const e = parseDate(t.end);
-    let cur = new Date(s);
-    while (cur <= e) {
-      const key = fmt(cur);
-      workloadMap[t.owner][key] = (workloadMap[t.owner][key] || 0) + 1;
-      cur.setDate(cur.getDate() + 1);
-    }
-  });
-
-  // Max tasks per day (for relative coloring)
-  let maxCount = 0;
-  Object.values(workloadMap).forEach((days) => {
-    Object.values(days).forEach((c) => { if (c > maxCount) maxCount = c; });
-  });
-
-  // Color: 0=empty, 1=green, 2=yellow-green, 3+=orange-red
-  const getHeatColor = (count) => {
-    if (count === 0) return { bg: "#F8FAFC", text: "#CBD5E1", border: "#F1F5F9" };
-    if (count === 1) return { bg: "#D1FAE5", text: "#065F46", border: "#A7F3D0" };
-    if (count === 2) return { bg: "#FEF9C3", text: "#854D0E", border: "#FDE68A" };
-    if (count === 3) return { bg: "#FED7AA", text: "#9A3412", border: "#FDBA74" };
-    if (count === 4) return { bg: "#FECACA", text: "#991B1B", border: "#FCA5A5" };
-    return { bg: "#EF4444", text: "#fff", border: "#DC2626" };
-  };
-
-  const goPrevMonth = () => { setWlMonth(new Date(year, month - 1, 1)); setWlStart(""); setWlEnd(""); };
-  const goNextMonth = () => { setWlMonth(new Date(year, month + 1, 1)); setWlStart(""); setWlEnd(""); };
-  const goThisMonth = () => { setWlMonth(new Date(today.getFullYear(), today.getMonth(), 1)); setWlStart(""); setWlEnd(""); };
-
-  const cellSize = 40;
-  const nameWidth = 130;
-
-  // Compute total per team member in visible range
-  const getTotalForMember = (name) => {
-    let total = 0;
-    filteredDates.forEach((d) => { total += (workloadMap[name]?.[fmt(d)] || 0); });
-    return total;
-  };
-
-  return (
-    <div style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.05)", padding: 16, marginTop: 20 }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <h3 style={{ margin: 0, fontSize: 11, textTransform: "uppercase", letterSpacing: 1, color: "#94A3B8", fontWeight: 700 }}>Team Workload</h3>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#0F172A" }}>{monthLabel}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          {/* Date range filter */}
-          <div style={{ display: "flex", alignItems: "center", gap: 4, background: "#F8FAFC", borderRadius: 6, padding: "3px 8px", border: "1px solid #E2E8F0" }}>
-            <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8" }}>From</span>
-            <input type="date" value={wlStart} onChange={(e) => setWlStart(e.target.value)}
-              onClick={(e) => { try { e.target.showPicker(); } catch(err) {} }}
-              style={{ border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, color: "#334155", outline: "none", fontWeight: 500, cursor: "pointer", borderRadius: 4, padding: "3px 6px", width: 120 }} />
-            <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8", marginLeft: 4 }}>To</span>
-            <input type="date" value={wlEnd} onChange={(e) => setWlEnd(e.target.value)}
-              onClick={(e) => { try { e.target.showPicker(); } catch(err) {} }}
-              style={{ border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, color: "#334155", outline: "none", fontWeight: 500, cursor: "pointer", borderRadius: 4, padding: "3px 6px", width: 120 }} />
-            {(wlStart || wlEnd) && (
-              <button onClick={() => { setWlStart(""); setWlEnd(""); }} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, color: "#94A3B8", padding: "0 4px" }}>✕</button>
-            )}
-          </div>
-          {/* Month nav */}
-          <button onClick={goPrevMonth} style={{ width: 28, height: 28, border: "1px solid #E2E8F0", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 14, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>←</button>
-          <button onClick={goThisMonth} style={{ padding: "4px 10px", border: "1px solid #E2E8F0", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 600, color: "#4F46E5" }}>This Month</button>
-          <button onClick={goNextMonth} style={{ width: 28, height: 28, border: "1px solid #E2E8F0", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 14, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
-        </div>
-      </div>
-
-      {/* Grid */}
-      <div style={{ overflowX: "auto" }}>
-        <div style={{ display: "flex", minWidth: nameWidth + filteredDates.length * cellSize + 60 }}>
-          {/* Member names column */}
-          <div style={{ width: nameWidth, minWidth: nameWidth, borderRight: "2px solid #E2E8F0" }}>
-            <div style={{ height: 50, display: "flex", alignItems: "flex-end", padding: "0 8px 6px", fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "2px solid #E2E8F0" }}>Team Member</div>
-            {team.map((m) => {
-              const cs = getColorSet(m.color);
-              const total = getTotalForMember(m.name);
-              return (
-                <div key={m.name} style={{ height: cellSize, display: "flex", alignItems: "center", padding: "0 8px", borderBottom: "1px solid #F1F5F9", gap: 6 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: cs.bg, flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#1E293B", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: "#94A3B8", flexShrink: 0 }}>{total}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Date columns */}
-          <div style={{ flex: 1, minWidth: filteredDates.length * cellSize }}>
-            {/* Date headers */}
-            <div style={{ display: "flex", height: 50, borderBottom: "2px solid #E2E8F0" }}>
-              {filteredDates.map((d) => {
-                const isToday = fmt(d) === fmt(today);
-                const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                return (
-                  <div key={fmt(d)} style={{ width: cellSize, minWidth: cellSize, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", padding: "0 0 4px", borderRight: "1px solid #F1F5F9", background: isToday ? "#EEF2FF" : "transparent" }}>
-                    <span style={{ fontSize: 9, fontWeight: 600, color: isToday ? "#4F46E5" : isWeekend ? "#CBD5E1" : "#94A3B8" }}>{d.toLocaleDateString("en-US", { weekday: "narrow" })}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: isToday ? "#4F46E5" : isWeekend ? "#CBD5E1" : "#334155" }}>{d.getDate()}</span>
-                  </div>
-                );
-              })}
-            </div>
-            {/* Heatmap cells */}
-            {team.map((m) => (
-              <div key={m.name} style={{ display: "flex", height: cellSize, borderBottom: "1px solid #F1F5F9" }}>
-                {filteredDates.map((d) => {
-                  const key = fmt(d);
-                  const count = workloadMap[m.name]?.[key] || 0;
-                  const heat = getHeatColor(count);
-                  const isToday = key === fmt(today);
-                  const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                  return (
-                    <div key={key} style={{ width: cellSize, minWidth: cellSize, display: "flex", alignItems: "center", justifyContent: "center", borderRight: "1px solid #F8FAFC", background: isToday ? "#EEF2FF" : isWeekend && count === 0 ? "#FAFBFC" : "transparent", position: "relative" }}>
-                      {count > 0 ? (
-                        <div title={`${m.name}: ${count} task${count > 1 ? "s" : ""} on ${d.toLocaleDateString()}`}
-                          style={{ width: cellSize - 6, height: cellSize - 8, borderRadius: 6, background: heat.bg, border: `1px solid ${heat.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: heat.text, cursor: "default" }}>
-                          {count}
-                        </div>
-                      ) : isWeekend ? (
-                        <div style={{ width: cellSize - 6, height: cellSize - 8, borderRadius: 6, background: "#F8FAFC", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <span style={{ fontSize: 9, color: "#E2E8F0" }}>—</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          {/* Total column */}
-          <div style={{ width: 50, minWidth: 50, borderLeft: "2px solid #E2E8F0" }}>
-            <div style={{ height: 50, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "0 0 6px", fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", borderBottom: "2px solid #E2E8F0" }}>Total</div>
-            {team.map((m) => {
-              const total = getTotalForMember(m.name);
-              const heat = getHeatColor(Math.min(total, 5));
-              return (
-                <div key={m.name} style={{ height: cellSize, display: "flex", alignItems: "center", justifyContent: "center", borderBottom: "1px solid #F1F5F9" }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: total === 0 ? "#CBD5E1" : "#1E293B" }}>{total}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 10, color: "#94A3B8", fontWeight: 600 }}>Load:</span>
-          {[
-            { label: "Free", ...getHeatColor(0), count: 0 },
-            { label: "1 task", ...getHeatColor(1), count: 1 },
-            { label: "2 tasks", ...getHeatColor(2), count: 2 },
-            { label: "3 tasks", ...getHeatColor(3), count: 3 },
-            { label: "4 tasks", ...getHeatColor(4), count: 4 },
-            { label: "5+ tasks", ...getHeatColor(5), count: 5 },
-          ].map((l) => (
-            <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#64748B" }}>
-              <div style={{ width: 16, height: 16, borderRadius: 4, background: l.bg, border: `1px solid ${l.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700, color: l.text }}>{l.count || ""}</div>
-              {l.label}
-            </div>
-          ))}
-        </div>
-        <span style={{ fontSize: 10, color: "#94A3B8" }}>Only leaf tasks counted (subtasks without children)</span>
-      </div>
-    </div>
-  );
-}
 
 // ─── Main Component ─────────────────────────────────────────────────
 export default function TaskTracker() {
@@ -987,7 +786,7 @@ export default function TaskTracker() {
             </button>
           </div>
           <div style={{ display: "flex", borderRadius: 8, border: "1px solid #E2E8F0", overflow: "hidden" }}>
-            {[["both", "Table + Gantt"], ["table", "Table"], ["gantt", "Gantt"], ["workload", "Team Workload"]].map(([v, l]) => (
+            {[["both", "Table + Gantt"], ["table", "Table"], ["gantt", "Gantt"]].map(([v, l]) => (
               <button key={v} onClick={() => setView(v)} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer", background: view === v ? "#1E293B" : "#fff", color: view === v ? "#fff" : "#64748B" }}>{l}</button>
             ))}
           </div>
@@ -1174,10 +973,7 @@ export default function TaskTracker() {
         </div>
       )}
 
-      {/* Team Workload */}
-      {(view === "workload") && (
-        <TeamWorkload tasks={tasks} team={team} ownerColors={ownerColors} />
-      )}
+
     </div>
   );
 }
