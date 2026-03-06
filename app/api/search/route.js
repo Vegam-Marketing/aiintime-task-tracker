@@ -21,9 +21,9 @@ SEARCH QUERY: "${query}"
 
 Return ONLY a JSON object with two keys:
 - "ids": array of matching task IDs ordered by relevance (most relevant first)
-- "summary": a one-sentence summary of what you found (e.g. "Found 5 marketing-related tasks, 2 are blocked")
+- "summary": a one-sentence summary of what you found
 
-Return ONLY valid JSON, no markdown, no backticks. Example: {"ids":[3,7,12],"summary":"Found 3 tasks related to content creation"}`;
+Return ONLY valid JSON, no markdown, no backticks, no explanation. Example: {"ids":[3,7,12],"summary":"Found 3 tasks related to content creation"}`;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -44,9 +44,28 @@ Return ONLY valid JSON, no markdown, no backticks. Example: {"ids":[3,7,12],"sum
     }
 
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{"ids":[],"summary":"No results"}';
-    const cleaned = text.replace(/```json|```/g, "").trim();
-    const result = JSON.parse(cleaned);
+    const raw = data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
+    
+    // Extract JSON from response — Gemini may wrap it in markdown or add thinking text
+    let result = { ids: [], summary: "No results" };
+    try {
+      // Try direct parse first
+      const cleaned = raw.replace(/```json|```/g, "").trim();
+      result = JSON.parse(cleaned);
+    } catch (e1) {
+      // Find JSON object in the text
+      const jsonMatch = raw.match(/\{[\s\S]*"ids"\s*:\s*\[[\s\S]*?\][\s\S]*?\}/);
+      if (jsonMatch) {
+        try { result = JSON.parse(jsonMatch[0]); } catch (e2) {
+          // Last resort: extract IDs with regex
+          const idMatches = raw.match(/\b\d+\b/g);
+          if (idMatches) {
+            const validIds = idMatches.map(Number).filter((id) => tasks.some((t) => t.id === id));
+            result = { ids: validIds, summary: `Found ${validIds.length} matching tasks` };
+          }
+        }
+      }
+    }
 
     return NextResponse.json({ matchedIds: result.ids || [], summary: result.summary || "" });
   } catch (err) {
