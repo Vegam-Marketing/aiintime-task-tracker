@@ -377,6 +377,7 @@ export default function TaskTracker() {
   const [deepSearchIds, setDeepSearchIds] = useState(null);
   const [deepSearchSummary, setDeepSearchSummary] = useState("");
   const [deepSearching, setDeepSearching] = useState(false);
+  const [searchAnswer, setSearchAnswer] = useState("");
   const [view, setView] = useState("both");
   const [showTeamPanel, setShowTeamPanel] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState(new Set());
@@ -661,19 +662,12 @@ export default function TaskTracker() {
   }, [dragTaskId, getTaskDepth, getDescendantIds]);
   const handleDragEnd = useCallback(() => { if (dragNode.current) dragNode.current.style.opacity = "1"; setDragTaskId(null); setDragOverTaskId(null); dragNode.current = null; }, []);
 
-  // Fuzzy search: match query tokens against task fields
-  const fuzzyMatch = useCallback((task, q) => {
-    if (!q.trim()) return true;
-    const tokens = q.toLowerCase().trim().split(/\s+/);
-    const hay = [task.task, task.owner, task.status, task.bottleneck, task.start, task.end].join(" ").toLowerCase();
-    return tokens.every((tok) => hay.includes(tok));
-  }, []);
-
-  // Deep search via Gemini API
-  const runDeepSearch = useCallback(async () => {
+  // Semantic search via Gemini API
+  const runSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
     setDeepSearching(true);
     setDeepSearchSummary("");
+    setSearchAnswer("");
     try {
       const res = await fetch("/api/search", {
         method: "POST",
@@ -687,6 +681,7 @@ export default function TaskTracker() {
       } else {
         setDeepSearchIds(data.matchedIds || []);
         setDeepSearchSummary(data.summary || "");
+        setSearchAnswer(data.answer || "");
       }
     } catch (err) {
       setDeepSearchSummary("Search failed");
@@ -695,14 +690,12 @@ export default function TaskTracker() {
     setDeepSearching(false);
   }, [searchQuery, tasks]);
 
-  const clearSearch = () => { setSearchQuery(""); setDeepSearchIds(null); setDeepSearchSummary(""); };
+  const clearSearch = () => { setSearchQuery(""); setDeepSearchIds(null); setDeepSearchSummary(""); setSearchAnswer(""); };
 
   const isAllSelected = filterOwners.size === 0;
   const ownerFiltered = isAllSelected ? tasks : tasks.filter((t) => filterOwners.has(t.owner));
-  const filtered = searchQuery.trim()
-    ? (deepSearchIds !== null
-      ? ownerFiltered.filter((t) => deepSearchIds.includes(t.id))
-      : ownerFiltered.filter((t) => fuzzyMatch(t, searchQuery)))
+  const filtered = deepSearchIds !== null
+    ? ownerFiltered.filter((t) => deepSearchIds.includes(t.id))
     : ownerFiltered;
   const tableDisplayList = useMemo(() => buildDisplayList(filtered, collapsedIds), [filtered, collapsedIds]);
   const ganttDisplayList = useMemo(() => buildDisplayList(filtered, ganttCollapsedIds), [filtered, ganttCollapsedIds]);
@@ -774,8 +767,8 @@ export default function TaskTracker() {
           <div style={{ display: "flex", alignItems: "center", gap: 4, position: "relative" }}>
             <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
               <span style={{ position: "absolute", left: 10, fontSize: 14, color: "#94A3B8", pointerEvents: "none" }}>&#x1F50D;</span>
-              <input value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); if (deepSearchIds !== null) { setDeepSearchIds(null); setDeepSearchSummary(""); } }}
-                onKeyDown={(e) => { if (e.key === "Enter") runDeepSearch(); }}
+              <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && searchQuery.trim()) runSearch(); }}
                 placeholder="Search tasks..."
                 style={{ width: 200, padding: "6px 32px 6px 32px", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12, color: "#334155", outline: "none", background: "#fff" }}
               />
@@ -783,10 +776,10 @@ export default function TaskTracker() {
                 <button onClick={clearSearch} style={{ position: "absolute", right: 6, border: "none", background: "none", cursor: "pointer", fontSize: 14, color: "#94A3B8", padding: 0, lineHeight: 1 }}>×</button>
               )}
             </div>
-            <button onClick={runDeepSearch} disabled={deepSearching || !searchQuery.trim()}
-              title="AI-powered semantic search (requires Gemini API key)"
+            <button onClick={runSearch} disabled={deepSearching || !searchQuery.trim()}
+              title="AI-powered semantic search"
               style={{ padding: "6px 10px", borderRadius: 8, border: deepSearchIds !== null ? "2px solid #7C3AED" : "1px solid #E2E8F0", fontSize: 11, fontWeight: 600, cursor: deepSearching || !searchQuery.trim() ? "default" : "pointer", background: deepSearchIds !== null ? "#F5F3FF" : "#fff", color: deepSearchIds !== null ? "#7C3AED" : deepSearching ? "#CBD5E1" : "#64748B", opacity: !searchQuery.trim() ? 0.5 : 1 }}>
-              {deepSearching ? "Searching..." : "✨ Deep Search"}
+              {deepSearching ? "Searching..." : "✨ Search"}
             </button>
           </div>
           <div style={{ display: "flex", borderRadius: 8, border: "1px solid #E2E8F0", overflow: "hidden" }}>
@@ -797,22 +790,22 @@ export default function TaskTracker() {
         </div>
       </div>
 
-      {/* Search summary */}
-      {deepSearchSummary && (
-        <div style={{ marginBottom: 12, padding: "8px 14px", borderRadius: 8, background: deepSearchIds && deepSearchIds.length > 0 ? "#F5F3FF" : "#FEF2F2", border: deepSearchIds && deepSearchIds.length > 0 ? "1px solid #DDD6FE" : "1px solid #FECACA", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 12, color: deepSearchIds && deepSearchIds.length > 0 ? "#5B21B6" : "#991B1B", fontWeight: 500 }}>
-            {deepSearchIds && deepSearchIds.length > 0 ? "✨ " : ""}
-            {deepSearchSummary}
-            {deepSearchIds && deepSearchIds.length > 0 ? (" — showing " + deepSearchIds.length + " of " + tasks.length + " tasks") : ""}
-          </span>
-          <button onClick={clearSearch} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>Clear</button>
-        </div>
-      )}
-      {searchQuery && !deepSearchIds && filtered.length < (isAllSelected ? tasks.length : ownerFiltered.length) && (
-        <div style={{ marginBottom: 12, padding: "6px 14px", borderRadius: 8, background: "#F0FDF4", border: "1px solid #BBF7D0", fontSize: 12, color: "#166534", fontWeight: 500 }}>
-          Fuzzy match: showing {filtered.length} of {isAllSelected ? tasks.length : ownerFiltered.length} tasks
-          {" — "}
-          <button onClick={runDeepSearch} style={{ border: "none", background: "none", cursor: "pointer", color: "#7C3AED", fontWeight: 600, textDecoration: "underline", padding: 0, fontSize: 12 }}>Try Deep Search for smarter results</button>
+      {/* Search results */}
+      {(deepSearchSummary || searchAnswer) && (
+        <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: deepSearchIds && deepSearchIds.length > 0 ? "#F5F3FF" : "#FEF2F2", border: deepSearchIds && deepSearchIds.length > 0 ? "1px solid #DDD6FE" : "1px solid #FECACA" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 12, color: deepSearchIds && deepSearchIds.length > 0 ? "#5B21B6" : "#991B1B", fontWeight: 500 }}>
+              {deepSearchIds && deepSearchIds.length > 0 ? "✨ " : ""}
+              {deepSearchSummary}
+              {deepSearchIds && deepSearchIds.length > 0 ? (" — showing " + deepSearchIds.length + " of " + tasks.length + " tasks") : ""}
+            </span>
+            <button onClick={clearSearch} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>Clear</button>
+          </div>
+          {searchAnswer && (
+            <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 6, background: "#fff", border: "1px solid #EDE9FE", fontSize: 12, color: "#374151", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+              {searchAnswer}
+            </div>
+          )}
         </div>
       )}
 
