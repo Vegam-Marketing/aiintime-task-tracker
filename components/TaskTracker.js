@@ -720,6 +720,9 @@ export default function TaskTracker() {
 
   const stats = { total: filtered.length, done: filtered.filter((t) => t.status === "Done").length, blocked: filtered.filter((t) => t.status === "Blocked").length, inProgress: filtered.filter((t) => t.status === "In Progress").length };
 
+  const handleGanttScroll = useCallback((days) => setCalStart((prev) => fmt(addDays(parseDate(prev), days))), []);
+  const handleGanttCollapse = useCallback((id) => setGanttCollapsedIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; }), []);
+
   const calStartDate = parseDate(calStart);
   const calEndDate = addDays(calStartDate, calSpan - 1);
   const rangeLabel = `${calStartDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })} — ${calEndDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
@@ -993,7 +996,7 @@ export default function TaskTracker() {
               <button onClick={goNext} style={{ width: 28, height: 28, border: "1px solid #E2E8F0", borderRadius: 6, background: "#fff", cursor: "pointer", fontSize: 14, color: "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
             </div>
           </div>
-          <GanttChart displayList={ganttDisplayList} calendarStart={calStart} calendarDays={calSpan} onUpdateTask={updateTask} ownerColors={ownerColors} onScrollDays={(days) => setCalStart((prev) => fmt(addDays(parseDate(prev), days)))} onToggleCollapse={(id) => setGanttCollapsedIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })} />
+          <GanttChart displayList={ganttDisplayList} calendarStart={calStart} calendarDays={calSpan} onUpdateTask={updateTask} ownerColors={ownerColors} onScrollDays={handleGanttScroll} onToggleCollapse={handleGanttCollapse} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {team.map((m) => (<div key={m.name} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#64748B" }}><div style={{ width: 10, height: 10, borderRadius: 3, background: getColorSet(m.color).bg }} />{m.name}</div>))}
