@@ -221,7 +221,7 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);
     return () => { window.removeEventListener("mousemove", handleMove); window.removeEventListener("mouseup", handleUp); };
-  });
+  }, [onScrollDays]);
 
   const [drag, setDrag] = useState(null);
   const snapToDay = useCallback((px) => Math.round(px / dayWidth), [dayWidth]);
