@@ -665,7 +665,7 @@ export default function TaskTracker() {
     return tokens.every((tok) => hay.includes(tok));
   }, []);
 
-  // Deep search via Claude API
+  // Deep search via Gemini API
   const runDeepSearch = useCallback(async () => {
     if (!searchQuery.trim()) return;
     setDeepSearching(true);
@@ -780,7 +780,7 @@ export default function TaskTracker() {
               )}
             </div>
             <button onClick={runDeepSearch} disabled={deepSearching || !searchQuery.trim()}
-              title="AI-powered semantic search (requires Anthropic API key)"
+              title="AI-powered semantic search (requires Gemini API key)"
               style={{ padding: "6px 10px", borderRadius: 8, border: deepSearchIds !== null ? "2px solid #7C3AED" : "1px solid #E2E8F0", fontSize: 11, fontWeight: 600, cursor: deepSearching || !searchQuery.trim() ? "default" : "pointer", background: deepSearchIds !== null ? "#F5F3FF" : "#fff", color: deepSearchIds !== null ? "#7C3AED" : deepSearching ? "#CBD5E1" : "#64748B", opacity: !searchQuery.trim() ? 0.5 : 1 }}>
               {deepSearching ? "Searching..." : "✨ Deep Search"}
             </button>
