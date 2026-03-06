@@ -408,55 +408,46 @@ export default function TaskTracker() {
   }, []);
 
   // Auto-sync parent dates (recursive bottom-up): any task with children snaps to min(child starts) → max(child ends)
-  const syncingDates = useRef(false);
-  useEffect(() => {
-    if (isFirstLoad.current || loading || syncingDates.current) return;
-    syncingDates.current = true;
-
-    setTasks((prev) => {
-      const childrenMap = {};
-      prev.forEach((t) => {
-        if (t.parentId && t.parentId !== 0) {
-          if (!childrenMap[t.parentId]) childrenMap[t.parentId] = [];
-          childrenMap[t.parentId].push(t.id);
-        }
-      });
-      if (Object.keys(childrenMap).length === 0) { syncingDates.current = false; return prev; }
-
-      const taskMap = {};
-      prev.forEach((t) => { taskMap[t.id] = { ...t }; });
-
-      function getDepth(id, visited = new Set()) {
-        if (visited.has(id)) return 0;
-        visited.add(id);
-        const kids = childrenMap[id] || [];
-        if (kids.length === 0) return 0;
-        return 1 + Math.max(...kids.map((k) => getDepth(k, visited)));
+  // Parent date sync — runs inside task updates, NOT as an effect
+  const syncParentDates = useCallback((taskList) => {
+    const childrenMap = {};
+    taskList.forEach((t) => {
+      if (t.parentId && t.parentId !== 0) {
+        if (!childrenMap[t.parentId]) childrenMap[t.parentId] = [];
+        childrenMap[t.parentId].push(t.id);
       }
-
-      const parentIds = Object.keys(childrenMap).map(Number);
-      const sorted = parentIds.sort((a, b) => getDepth(b) - getDepth(a));
-
-      let changed = false;
-      sorted.forEach((pid) => {
-        const parent = taskMap[pid];
-        if (!parent) return;
-        const kids = (childrenMap[pid] || []).map((id) => taskMap[id]).filter(Boolean);
-        if (kids.length === 0) return;
-
-        const newEnd = fmt(new Date(Math.max(...kids.map((c) => parseDate(c.end)))));
-        const newStart = fmt(new Date(Math.min(...kids.map((c) => parseDate(c.start)))));
-
-        if (newEnd !== parent.end || newStart !== parent.start) {
-          taskMap[pid] = { ...parent, end: newEnd, start: newStart };
-          changed = true;
-        }
-      });
-
-      syncingDates.current = false;
-      return changed ? prev.map((t) => taskMap[t.id] || t) : prev;
     });
-  }, [tasks, loading]);
+    if (Object.keys(childrenMap).length === 0) return taskList;
+
+    const taskMap = {};
+    taskList.forEach((t) => { taskMap[t.id] = { ...t }; });
+
+    function getDepth(id, visited = new Set()) {
+      if (visited.has(id)) return 0;
+      visited.add(id);
+      const kids = childrenMap[id] || [];
+      if (kids.length === 0) return 0;
+      return 1 + Math.max(...kids.map((k) => getDepth(k, visited)));
+    }
+
+    const parentIds = Object.keys(childrenMap).map(Number);
+    const sorted = parentIds.sort((a, b) => getDepth(b) - getDepth(a));
+
+    let changed = false;
+    sorted.forEach((pid) => {
+      const parent = taskMap[pid];
+      if (!parent) return;
+      const kids = (childrenMap[pid] || []).map((id) => taskMap[id]).filter(Boolean);
+      if (kids.length === 0) return;
+      const newEnd = fmt(new Date(Math.max(...kids.map((c) => parseDate(c.end)))));
+      const newStart = fmt(new Date(Math.min(...kids.map((c) => parseDate(c.start)))));
+      if (newEnd !== parent.end || newStart !== parent.start) {
+        taskMap[pid] = { ...parent, end: newEnd, start: newStart };
+        changed = true;
+      }
+    });
+    return changed ? taskList.map((t) => taskMap[t.id] || t) : taskList;
+  }, []);
 
   // Auto-save tasks
   useEffect(() => {
@@ -480,14 +471,16 @@ export default function TaskTracker() {
   const goNext = () => setCalStart(fmt(addDays(parseDate(calStart), 7)));
 
   const updateTask = useCallback((id, field, value) => {
-    setTasks((prev) => prev.map((t) => {
-      if (t.id !== id) return t;
-      // Date validation: end can't be before start, start can't be after end
-      if (field === "end" && value < t.start) return { ...t, end: value, start: value };
-      if (field === "start" && value > t.end) return { ...t, start: value, end: value };
-      return { ...t, [field]: value };
-    }));
-  }, []);
+    setTasks((prev) => {
+      const updated = prev.map((t) => {
+        if (t.id !== id) return t;
+        if (field === "end" && value < t.start) return { ...t, end: value, start: value };
+        if (field === "start" && value > t.end) return { ...t, start: value, end: value };
+        return { ...t, [field]: value };
+      });
+      return (field === "start" || field === "end") ? syncParentDates(updated) : updated;
+    });
+  }, [syncParentDates]);
 
   const addTask = () => {
     setTasks((prev) => [...prev, { id: nextId, task: "", start: fmt(today), end: fmt(today), owner: ownerNames[0] || "", bottleneck: "", status: "Not Started", parentId: 0 }]);
