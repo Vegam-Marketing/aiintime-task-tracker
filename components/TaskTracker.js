@@ -77,8 +77,12 @@ function buildDisplayList(tasks, collapsedIds) {
     }
   }
 
-  // Start with top-level tasks
-  const topLevel = tasks.filter((t) => !t.parentId || t.parentId === 0);
+  // Sort children within each parent by start date
+  Object.values(childrenMap).forEach((kids) => kids.sort((a, b) => (a.start || "").localeCompare(b.start || "")));
+
+  // Start with top-level tasks, sorted by start date ascending
+  const topLevel = tasks.filter((t) => !t.parentId || t.parentId === 0)
+    .sort((a, b) => (a.start || "").localeCompare(b.start || ""));
   topLevel.forEach((t) => addWithChildren(t, 0));
 
   // Include orphaned tasks (parent was deleted — not just collapsed)

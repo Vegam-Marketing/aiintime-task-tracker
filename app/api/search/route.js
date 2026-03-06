@@ -26,7 +26,7 @@ Return ONLY a JSON object with two keys:
 Return ONLY valid JSON, no markdown, no backticks. Example: {"ids":[3,7,12],"summary":"Found 3 tasks related to content creation"}`;
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
