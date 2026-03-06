@@ -12,15 +12,25 @@ export async function POST(req) {
       `[ID:${t.id}] "${t.task}" | Owner: ${t.owner} | ${t.start} to ${t.end} | Status: ${t.status}${t.bottleneck ? ` | Note: ${t.bottleneck}` : ""}${t.parentId && t.parentId !== 0 ? ` | ParentID: ${t.parentId}` : ""}`
     ).join("\n");
 
-    const prompt = `You are an AI assistant for a project task tracker. Answer the user's question based on the tasks below.
+    const today = new Date().toISOString().split("T")[0];
+
+    const prompt = `You are an AI assistant for a project task tracker. Today's date is ${today}.
 
 TASKS:
 ${taskSummary}
 
 QUESTION: "${query}"
 
-Respond with ONLY a JSON object:
-{"ids":[matching task IDs],"summary":"one-line summary","answer":"plain text answer, no markdown, no asterisks, no bullet points, just clean sentences"}`;
+Rules for your answer:
+- Use plain text with newlines, NO markdown (no **, no ##, no *)
+- Use "- " prefix for bullet points
+- Group by owner or category when helpful
+- Reference task names naturally, skip IDs in the answer
+- Be concise but helpful
+- For questions about dates, compare against today (${today})
+
+Respond ONLY with JSON:
+{"ids":[matching task IDs],"summary":"one short line","answer":"formatted plain text answer with newlines"}`;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -29,12 +39,7 @@ Respond with ONLY a JSON object:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 1024,
-            responseMimeType: "application/json",
-            thinkingConfig: { thinkingBudget: 0 },
-          },
+          generationConfig: { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } },
         }),
       }
     );
@@ -62,7 +67,7 @@ Respond with ONLY a JSON object:
       }
     }
 
-    // Strip any leftover markdown from answer
+    // Clean markdown from answer
     const cleanAnswer = (result.answer || "")
       .replace(/\*\*/g, "")
       .replace(/^\s*\*\s+/gm, "- ")

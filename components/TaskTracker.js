@@ -378,6 +378,10 @@ export default function TaskTracker() {
   const [deepSearchSummary, setDeepSearchSummary] = useState("");
   const [deepSearching, setDeepSearching] = useState(false);
   const [searchAnswer, setSearchAnswer] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const chatEndRef = useRef(null);
   const [view, setView] = useState("both");
   const [showTeamPanel, setShowTeamPanel] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState(new Set());
@@ -663,34 +667,52 @@ export default function TaskTracker() {
   const handleDragEnd = useCallback(() => { if (dragNode.current) dragNode.current.style.opacity = "1"; setDragTaskId(null); setDragOverTaskId(null); dragNode.current = null; }, []);
 
   // Semantic search via Gemini API
-  const runSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return;
+  const sendSearch = useCallback(async (query) => {
+    if (!query.trim()) return;
+    const userMsg = { role: "user", text: query, time: new Date() };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatOpen(true);
     setDeepSearching(true);
-    setDeepSearchSummary("");
-    setSearchAnswer("");
     try {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, tasks }),
+        body: JSON.stringify({ query, tasks }),
       });
       const data = await res.json();
       if (data.error) {
-        setDeepSearchSummary(data.error);
+        setChatMessages((prev) => [...prev, { role: "ai", text: data.error, time: new Date() }]);
         setDeepSearchIds([]);
       } else {
         setDeepSearchIds(data.matchedIds || []);
-        setDeepSearchSummary(data.summary || "");
-        setSearchAnswer(data.answer || "");
+        const aiText = [data.summary, data.answer].filter(Boolean).join("\n\n");
+        setChatMessages((prev) => [...prev, {
+          role: "ai",
+          text: aiText || "No matching tasks found.",
+          matchCount: (data.matchedIds || []).length,
+          time: new Date(),
+        }]);
       }
     } catch (err) {
-      setDeepSearchSummary("Search failed");
+      setChatMessages((prev) => [...prev, { role: "ai", text: "Search failed", time: new Date() }]);
       setDeepSearchIds([]);
     }
     setDeepSearching(false);
-  }, [searchQuery, tasks]);
+  }, [tasks]);
 
-  const clearSearch = () => { setSearchQuery(""); setDeepSearchIds(null); setDeepSearchSummary(""); setSearchAnswer(""); };
+  const runSearch = useCallback(() => {
+    if (!searchQuery.trim()) return;
+    sendSearch(searchQuery);
+    setSearchQuery("");
+  }, [searchQuery, sendSearch]);
+
+  const sendChatMsg = useCallback(() => {
+    if (!chatInput.trim()) return;
+    sendSearch(chatInput);
+    setChatInput("");
+  }, [chatInput, sendSearch]);
+
+  const clearSearch = () => { setDeepSearchIds(null); setChatMessages([]); setChatOpen(false); };
 
   const isAllSelected = filterOwners.size === 0;
   const ownerFiltered = isAllSelected ? tasks : tasks.filter((t) => filterOwners.has(t.owner));
@@ -712,8 +734,32 @@ export default function TaskTracker() {
     </div>
   );
 
+  // Auto scroll chat
+  useEffect(() => { if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
+
+  // Format AI text with line breaks
+  const formatAIText = (text) => {
+    if (!text) return null;
+    return text.split("\n").map((line, i) => {
+      const trimmed = line.trim();
+      if (!trimmed) return <br key={i} />;
+      // Detect bullet lines
+      if (trimmed.startsWith("- ") || trimmed.startsWith("\u2022 ")) {
+        return <div key={i} style={{ paddingLeft: 12, position: "relative", marginBottom: 4 }}><span style={{ position: "absolute", left: 0 }}>\u2022</span>{trimmed.replace(/^[-\u2022]\s*/, "")}</div>;
+      }
+      // Detect numbered lines
+      const numMatch = trimmed.match(/^(\d+)[.)\s]+(.+)/);
+      if (numMatch) {
+        return <div key={i} style={{ paddingLeft: 16, position: "relative", marginBottom: 4 }}><span style={{ position: "absolute", left: 0, fontWeight: 600 }}>{numMatch[1]}.</span>{numMatch[2]}</div>;
+      }
+      return <div key={i} style={{ marginBottom: 4 }}>{trimmed}</div>;
+    });
+  };
+
   return (
-    <div style={{ minHeight: "100vh", background: "#F8FAFC", fontFamily: "'DM Sans', -apple-system, sans-serif", padding: "24px 20px" }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: "#F8FAFC", fontFamily: "'DM Sans', -apple-system, sans-serif" }}>
+      {/* Main content */}
+      <div style={{ flex: 1, padding: "24px 20px", minWidth: 0, transition: "all 0.3s ease" }}>
       {showTeamPanel && <TeamPanel team={team} onClose={() => setShowTeamPanel(false)} onSave={handleSaveTeam} />}
 
       {/* Header */}
@@ -971,6 +1017,77 @@ export default function TaskTracker() {
       )}
 
 
+      </div>
+
+      {/* Chat Sidebar */}
+      {chatOpen && (
+        <div style={{ width: 380, minWidth: 380, borderLeft: "1px solid #E2E8F0", background: "#fff", display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0 }}>
+          {/* Chat header */}
+          <div style={{ padding: "14px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#F8FAFC" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 16 }}>\u2728</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#0F172A" }}>AI Assistant</span>
+              {deepSearchIds && deepSearchIds.length > 0 && (
+                <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 12, background: "#F5F3FF", color: "#7C3AED" }}>{deepSearchIds.length} tasks filtered</span>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {deepSearchIds && (
+                <button onClick={() => setDeepSearchIds(null)} style={{ border: "1px solid #E2E8F0", background: "#fff", borderRadius: 6, padding: "4px 8px", fontSize: 10, fontWeight: 600, color: "#64748B", cursor: "pointer" }}>Show All</button>
+              )}
+              <button onClick={() => setChatOpen(false)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 18, color: "#94A3B8", padding: "0 4px", lineHeight: 1 }}>\u00d7</button>
+            </div>
+          </div>
+
+          {/* Chat messages */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+            {chatMessages.length === 0 && (
+              <div style={{ textAlign: "center", padding: "40px 20px", color: "#94A3B8" }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>\u2728</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Ask anything about your tasks</div>
+                <div style={{ fontSize: 11, marginTop: 4 }}>Try: "What is Jinks working on?" or "Show blocked tasks"</div>
+              </div>
+            )}
+            {chatMessages.map((msg, i) => (
+              <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
+                <div style={{
+                  maxWidth: "90%", padding: "8px 12px", borderRadius: msg.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
+                  background: msg.role === "user" ? "#7C3AED" : "#F8FAFC",
+                  color: msg.role === "user" ? "#fff" : "#1E293B",
+                  fontSize: 12, lineHeight: 1.5,
+                  border: msg.role === "user" ? "none" : "1px solid #E2E8F0",
+                }}>
+                  {msg.role === "user" ? msg.text : formatAIText(msg.text)}
+                </div>
+                {msg.matchCount > 0 && (
+                  <span style={{ fontSize: 10, color: "#94A3B8", marginTop: 2 }}>Filtered to {msg.matchCount} tasks</span>
+                )}
+              </div>
+            ))}
+            {deepSearching && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", background: "#F8FAFC", borderRadius: 12, border: "1px solid #E2E8F0", alignSelf: "flex-start" }}>
+                <span style={{ fontSize: 12, color: "#94A3B8", animation: "pulse 1.5s ease-in-out infinite" }}>\u2728 Thinking...</span>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Chat input */}
+          <div style={{ padding: "12px 14px", borderTop: "1px solid #E2E8F0", background: "#F8FAFC" }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={chatInput} onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && chatInput.trim() && !deepSearching) sendChatMsg(); }}
+                placeholder="Ask a follow-up..."
+                style={{ flex: 1, padding: "8px 12px", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12, color: "#334155", outline: "none", background: "#fff" }}
+              />
+              <button onClick={sendChatMsg} disabled={deepSearching || !chatInput.trim()}
+                style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: chatInput.trim() && !deepSearching ? "#7C3AED" : "#E2E8F0", color: chatInput.trim() && !deepSearching ? "#fff" : "#94A3B8", fontSize: 12, fontWeight: 600, cursor: chatInput.trim() && !deepSearching ? "pointer" : "default" }}>
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
