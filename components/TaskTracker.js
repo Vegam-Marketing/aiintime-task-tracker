@@ -809,25 +809,6 @@ export default function TaskTracker() {
 
       {/* Search results */}
       {(deepSearchSummary || searchAnswer) && (
-        <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 8, background: deepSearchIds && deepSearchIds.length > 0 ? "#F5F3FF" : "#FEF2F2", border: deepSearchIds && deepSearchIds.length > 0 ? "1px solid #DDD6FE" : "1px solid #FECACA" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 12, color: deepSearchIds && deepSearchIds.length > 0 ? "#5B21B6" : "#991B1B", fontWeight: 500 }}>
-              {deepSearchIds && deepSearchIds.length > 0 ? "✨ " : ""}
-              {deepSearchSummary}
-              {deepSearchIds && deepSearchIds.length > 0 ? (" — showing " + deepSearchIds.length + " of " + tasks.length + " tasks") : ""}
-            </span>
-            <button onClick={clearSearch} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>Clear</button>
-          </div>
-          {searchAnswer && (
-            <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 6, background: "#fff", border: "1px solid #EDE9FE", fontSize: 12, color: "#374151", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-              {searchAnswer}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Search results */}
-      {(deepSearchSummary || searchAnswer) && (
         <div style={{ marginBottom: 12, padding: "12px 16px", borderRadius: 10, background: deepSearchIds && deepSearchIds.length > 0 ? "#F5F3FF" : "#FEF2F2", border: deepSearchIds && deepSearchIds.length > 0 ? "1px solid #DDD6FE" : "1px solid #FECACA" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: searchAnswer ? 8 : 0 }}>
             <span style={{ fontSize: 12, color: deepSearchIds && deepSearchIds.length > 0 ? "#5B21B6" : "#991B1B", fontWeight: 600 }}>
