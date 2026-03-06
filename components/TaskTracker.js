@@ -408,10 +408,12 @@ export default function TaskTracker() {
   }, []);
 
   // Auto-sync parent dates (recursive bottom-up): any task with children snaps to min(child starts) → max(child ends)
+  const syncingDates = useRef(false);
   useEffect(() => {
-    if (isFirstLoad.current || loading) return;
+    if (isFirstLoad.current || loading || syncingDates.current) return;
+    syncingDates.current = true;
+
     setTasks((prev) => {
-      // Build children map
       const childrenMap = {};
       prev.forEach((t) => {
         if (t.parentId && t.parentId !== 0) {
@@ -419,10 +421,11 @@ export default function TaskTracker() {
           childrenMap[t.parentId].push(t.id);
         }
       });
+      if (Object.keys(childrenMap).length === 0) { syncingDates.current = false; return prev; }
+
       const taskMap = {};
       prev.forEach((t) => { taskMap[t.id] = { ...t }; });
 
-      // Get depth of each task (leaf = highest depth)
       function getDepth(id, visited = new Set()) {
         if (visited.has(id)) return 0;
         visited.add(id);
@@ -431,7 +434,6 @@ export default function TaskTracker() {
         return 1 + Math.max(...kids.map((k) => getDepth(k, visited)));
       }
 
-      // Get all parent IDs sorted deepest-first so we process bottom-up
       const parentIds = Object.keys(childrenMap).map(Number);
       const sorted = parentIds.sort((a, b) => getDepth(b) - getDepth(a));
 
@@ -451,6 +453,7 @@ export default function TaskTracker() {
         }
       });
 
+      syncingDates.current = false;
       return changed ? prev.map((t) => taskMap[t.id] || t) : prev;
     });
   }, [tasks, loading]);
