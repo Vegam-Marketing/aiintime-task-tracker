@@ -738,7 +738,7 @@ export default function TaskTracker() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#0F172A", letterSpacing: -0.5 }}>
-              Weekly Task Tracker<span style={{ color: "#94A3B8", fontWeight: 400, fontSize: 16 }}> / aiintime.com</span>
+              AI Intime - GTM Dashboard
             </h1>
             <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 12, background: saveStatus === "saved" ? "#D1FAE5" : saveStatus === "saving" ? "#FEF3C7" : "#FEE2E2", color: saveStatus === "saved" ? "#065F46" : saveStatus === "saving" ? "#92400E" : "#991B1B" }}>
               {saveStatus === "saved" ? "✓ Saved" : saveStatus === "saving" ? "Saving..." : "⚠ Error"}
@@ -1003,6 +1003,10 @@ function HubSpotDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [activeMetric, setActiveMetric] = useState(null);
+  const [contactList, setContactList] = useState([]);
+  const [contactTotal, setContactTotal] = useState(0);
+  const [contactLoading, setContactLoading] = useState(false);
 
   // Default to last 14 days
   useEffect(() => {
@@ -1046,11 +1050,30 @@ function HubSpotDashboard() {
 
   const removeEvent = (name) => setEventNames((prev) => prev.filter((e) => e !== name));
 
+  const drillDown = useCallback(async (metricKey) => {
+    if (activeMetric === metricKey) { setActiveMetric(null); setContactList([]); return; }
+    setActiveMetric(metricKey);
+    setContactLoading(true);
+    try {
+      const res = await fetch("/api/hubspot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dateFrom, dateTo, eventNames, metric: metricKey }),
+      });
+      const d = await res.json();
+      setContactList(d.contacts || []);
+      setContactTotal(d.total || 0);
+    } catch (err) {
+      setContactList([]);
+    }
+    setContactLoading(false);
+  }, [dateFrom, dateTo, eventNames, activeMetric]);
+
   const metrics = data ? [
-    { label: "Contacts Created", value: data.created, desc: "Total contacts created in date range", color: "#0EA5E9", bg: "#E0F2FE", icon: "\uD83D\uDC64", url: data.urls?.created },
-    { label: "Contacts Contacted", value: data.contacted, desc: "Last Call Outcome: Exists", color: "#3B82F6", bg: "#DBEAFE", icon: "\u260E", url: data.urls?.contacted },
-    { label: "Calls Answered", value: data.connected, desc: "Last Call Outcome: Connected", color: "#059669", bg: "#D1FAE5", icon: "\u2705", url: data.urls?.connected },
-    { label: "Leads Generated", value: data.leads, desc: "Disposition: Interested - Appointment Set", color: "#7C3AED", bg: "#EDE9FE", icon: "\u2B50", url: data.urls?.leads },
+    { key: "created", label: "Contacts Created", value: data.created, desc: "Total contacts created in date range", color: "#0EA5E9", bg: "#E0F2FE", icon: "\uD83D\uDC64" },
+    { key: "contacted", label: "Contacts Contacted", value: data.contacted, desc: "Last Call Outcome: Exists", color: "#3B82F6", bg: "#DBEAFE", icon: "\u260E" },
+    { key: "connected", label: "Calls Answered", value: data.connected, desc: "Last Call Outcome: Connected", color: "#059669", bg: "#D1FAE5", icon: "\u2705" },
+    { key: "leads", label: "Leads Generated", value: data.leads, desc: "Disposition: Interested - Appointment Set", color: "#7C3AED", bg: "#EDE9FE", icon: "\u2B50" },
   ] : [];
 
   return (
@@ -1141,25 +1164,72 @@ function HubSpotDashboard() {
 
       {/* Metric cards */}
       {data && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 16 }}>
-          {metrics.map((m) => (
-            <div key={m.label} onClick={() => { if (m.url) window.open(m.url, "_blank"); }}
-              style={{ borderRadius: 12, border: "1px solid " + m.color + "33", background: m.bg + "44", padding: "20px 20px", cursor: "pointer", transition: "all 0.15s ease" }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 4px 12px " + m.color + "22"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 24 }}>{m.icon}</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#475569" }}>{m.label}</span>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 16 }}>
+          {metrics.map((m) => {
+            const isActive = activeMetric === m.key;
+            return (
+              <div key={m.key} onClick={() => drillDown(m.key)}
+                style={{ borderRadius: 12, border: isActive ? "2px solid " + m.color : "1px solid " + m.color + "33", background: isActive ? m.bg : m.bg + "44", padding: "20px 20px", cursor: "pointer", transition: "all 0.15s ease", position: "relative" }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 4px 12px " + m.color + "22"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 24 }}>{m.icon}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#475569" }}>{m.label}</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: isActive ? m.color : "#94A3B8", fontWeight: 600 }}>{isActive ? "▼ Close" : "Click to view"}</span>
                 </div>
-                <span style={{ fontSize: 12, color: "#94A3B8" }}>View in HubSpot →</span>
+                <div style={{ fontSize: 36, fontWeight: 800, color: m.color, marginBottom: 4 }}>{m.value.toLocaleString()}</div>
+                <div style={{ fontSize: 11, color: "#94A3B8" }}>{m.desc}</div>
               </div>
-              <div style={{ fontSize: 36, fontWeight: 800, color: m.color, marginBottom: 4 }}>{m.value.toLocaleString()}</div>
-              <div style={{ fontSize: 11, color: "#94A3B8" }}>{m.desc}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
+
+      {/* Contact drill-down table */}
+      {activeMetric && (contactLoading ? (
+        <div style={{ padding: 20, textAlign: "center", color: "#94A3B8", fontSize: 13, background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0", marginBottom: 16 }}>Loading contacts...</div>
+      ) : contactList.length > 0 && (
+        <div style={{ borderRadius: 10, border: "1px solid #E2E8F0", overflow: "hidden", marginBottom: 16 }}>
+          <div style={{ padding: "10px 16px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>
+              {metrics.find((m) => m.key === activeMetric)?.label} — {contactTotal > 100 ? `showing 100 of ${contactTotal}` : `${contactList.length} contacts`}
+            </span>
+            <button onClick={() => { setActiveMetric(null); setContactList([]); }} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>Close</button>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: "#F1F5F9" }}>
+                  {["#", "Name", "Email", "Company", "Event", "Call Outcome", "Disposition", "Created", ""].map((h, i) => (
+                    <th key={i} style={{ padding: "8px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#64748B", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {contactList.map((c, i) => (
+                  <tr key={c.id} style={{ borderBottom: "1px solid #F1F5F9" }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "#F8FAFC"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "8px 10px", color: "#94A3B8", fontWeight: 600 }}>{i + 1}</td>
+                    <td style={{ padding: "8px 10px", fontWeight: 600, color: "#1E293B", whiteSpace: "nowrap" }}>{c.name}</td>
+                    <td style={{ padding: "8px 10px", color: "#64748B" }}>{c.email}</td>
+                    <td style={{ padding: "8px 10px", color: "#64748B" }}>{c.company}</td>
+                    <td style={{ padding: "8px 10px" }}>{c.event && <span style={{ padding: "2px 8px", borderRadius: 12, background: "#EDE9FE", color: "#5B21B6", fontSize: 10, fontWeight: 600 }}>{c.event}</span>}</td>
+                    <td style={{ padding: "8px 10px", color: "#475569", fontSize: 11 }}>{c.callOutcome}</td>
+                    <td style={{ padding: "8px 10px", color: "#475569", fontSize: 11 }}>{c.disposition}</td>
+                    <td style={{ padding: "8px 10px", color: "#94A3B8", fontSize: 11, whiteSpace: "nowrap" }}>{c.created ? new Date(c.created).toLocaleDateString() : ""}</td>
+                    <td style={{ padding: "8px 10px" }}>
+                      <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#3B82F6", fontWeight: 600, textDecoration: "none" }}>Open ↗</a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
 
       {loading && !data && (
         <div style={{ textAlign: "center", padding: 40, color: "#94A3B8", fontSize: 14 }}>Loading HubSpot data...</div>

@@ -2,19 +2,17 @@ import { NextResponse } from "next/server";
 
 const HUBSPOT_API = "https://api.hubapi.com/crm/v3/objects/contacts/search";
 
-async function searchContacts(token, filters) {
+async function searchContacts(token, filters, limit = 1, properties = ["firstname"], offset = 0) {
   const body = {
     filterGroups: [{ filters }],
-    limit: 1,
-    properties: ["firstname"],
+    limit,
+    properties,
+    after: offset > 0 ? offset : undefined,
   };
 
   const res = await fetch(HUBSPOT_API, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   });
 
@@ -24,26 +22,18 @@ async function searchContacts(token, filters) {
     throw new Error(`HubSpot API ${res.status}`);
   }
 
-  const data = await res.json();
-  return data.total || 0;
-}
-
-// Build HubSpot filter URL for contacts list
-function buildHubSpotUrl(portalId, filters) {
-  const encoded = encodeURIComponent(JSON.stringify([{ filters }]));
-  return `https://app.hubspot.com/contacts/${portalId}/objects/0-1/views/all/list?filterGroups=${encoded}`;
+  return await res.json();
 }
 
 export async function POST(req) {
   try {
-    const { dateFrom, dateTo, eventNames } = await req.json();
+    const { dateFrom, dateTo, eventNames, metric } = await req.json();
 
     const token = process.env.HUBSPOT_ACCESS_TOKEN;
-    if (!token) return NextResponse.json({ error: "HUBSPOT_ACCESS_TOKEN not configured in Vercel env vars" }, { status: 500 });
+    if (!token) return NextResponse.json({ error: "HUBSPOT_ACCESS_TOKEN not configured" }, { status: 500 });
 
     const portalId = process.env.HUBSPOT_PORTAL_ID || "243237215";
 
-    // Date filters on createdate
     const dateFilters = [];
     if (dateFrom) dateFilters.push({ propertyName: "createdate", operator: "GTE", value: new Date(dateFrom).getTime().toString() });
     if (dateTo) {
@@ -52,46 +42,53 @@ export async function POST(req) {
       dateFilters.push({ propertyName: "createdate", operator: "LTE", value: end.getTime().toString() });
     }
 
-    // Event name filter
     const eventFilter = eventNames && eventNames.length > 0
       ? [{ propertyName: "event_name", operator: "IN", values: eventNames }]
       : [];
 
     const baseFilters = [...eventFilter, ...dateFilters];
 
-    // 1: Contacts Created
-    const createdFilters = [...baseFilters];
-    const createdCount = await searchContacts(token, createdFilters);
+    // If metric is specified, return contact list for that metric
+    if (metric) {
+      let filters = [...baseFilters];
+      if (metric === "contacted") filters.push({ propertyName: "jc_last_call_outcome", operator: "HAS_PROPERTY" });
+      else if (metric === "connected") filters.push({ propertyName: "jc_last_call_outcome", operator: "EQ", value: "Connected" });
+      else if (metric === "leads") filters.push({ propertyName: "jc_last_call_disposition_sd", operator: "EQ", value: "Interested - Appointment Set" });
 
-    // 2: Contacts Contacted (Last Call Outcome exists)
-    const contactedFilters = [...baseFilters, { propertyName: "jc_last_call_outcome", operator: "HAS_PROPERTY" }];
-    const contactedCount = await searchContacts(token, contactedFilters);
+      const data = await searchContacts(token, filters, 100, [
+        "firstname", "lastname", "email", "company", "event_name",
+        "jc_last_call_outcome", "jc_last_call_disposition_sd", "createdate"
+      ]);
 
-    // 3: Calls Answered (Last Call Outcome = Connected)
-    const connectedFilters = [...baseFilters, { propertyName: "jc_last_call_outcome", operator: "EQ", value: "Connected" }];
-    const connectedCount = await searchContacts(token, connectedFilters);
+      const contacts = (data.results || []).map((c) => ({
+        id: c.id,
+        name: [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ") || c.properties.email || "Unknown",
+        email: c.properties.email || "",
+        company: c.properties.company || "",
+        event: c.properties.event_name || "",
+        callOutcome: c.properties.jc_last_call_outcome || "",
+        disposition: c.properties.jc_last_call_disposition_sd || "",
+        created: c.properties.createdate || "",
+        url: `https://app.hubspot.com/contacts/${portalId}/record/0-1/${c.id}`,
+      }));
 
-    // 4: Leads Generated (Disposition = Interested - Appointment Set)
-    const leadsFilters = [...baseFilters, { propertyName: "jc_last_call_disposition_sd", operator: "EQ", value: "Interested - Appointment Set" }];
-    const leadsCount = await searchContacts(token, leadsFilters);
+      return NextResponse.json({ contacts, total: data.total || 0 });
+    }
 
-    // Build HubSpot URLs
-    const urls = {
-      created: buildHubSpotUrl(portalId, createdFilters),
-      contacted: buildHubSpotUrl(portalId, contactedFilters),
-      connected: buildHubSpotUrl(portalId, connectedFilters),
-      leads: buildHubSpotUrl(portalId, leadsFilters),
-    };
+    // Default: return counts
+    const [createdRes, contactedRes, connectedRes, leadsRes] = await Promise.all([
+      searchContacts(token, [...baseFilters]),
+      searchContacts(token, [...baseFilters, { propertyName: "jc_last_call_outcome", operator: "HAS_PROPERTY" }]),
+      searchContacts(token, [...baseFilters, { propertyName: "jc_last_call_outcome", operator: "EQ", value: "Connected" }]),
+      searchContacts(token, [...baseFilters, { propertyName: "jc_last_call_disposition_sd", operator: "EQ", value: "Interested - Appointment Set" }]),
+    ]);
 
     return NextResponse.json({
-      created: createdCount,
-      contacted: contactedCount,
-      connected: connectedCount,
-      leads: leadsCount,
-      urls,
-      dateFrom,
-      dateTo,
-      eventNames: eventNames || [],
+      created: createdRes.total || 0,
+      contacted: contactedRes.total || 0,
+      connected: connectedRes.total || 0,
+      leads: leadsRes.total || 0,
+      portalId,
     });
   } catch (err) {
     console.error("HubSpot error:", err);

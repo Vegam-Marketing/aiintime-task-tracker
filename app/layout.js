@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "Task Tracker — aiintime.com",
+  title: "AI Intime - GTM Dashboard",
   description: "Weekly task tracker with Gantt chart for the aiintime.com sales & marketing team",
 };
 
