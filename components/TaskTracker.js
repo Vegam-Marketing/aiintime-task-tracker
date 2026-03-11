@@ -1047,10 +1047,10 @@ function HubSpotDashboard() {
   const removeEvent = (name) => setEventNames((prev) => prev.filter((e) => e !== name));
 
   const metrics = data ? [
-    { label: "Contacts Created", value: data.created, desc: "Total contacts created in date range", color: "#0EA5E9", bg: "#E0F2FE", icon: "\uD83D\uDC64" },
-    { label: "Contacts Contacted", value: data.contacted, desc: "Last Call Outcome: Exists", color: "#3B82F6", bg: "#DBEAFE", icon: "\u260E" },
-    { label: "Calls Answered", value: data.connected, desc: "Last Call Outcome: Connected", color: "#059669", bg: "#D1FAE5", icon: "\u2705" },
-    { label: "Leads Generated", value: data.leads, desc: "Disposition: Interested - Appointment Set", color: "#7C3AED", bg: "#EDE9FE", icon: "\u2B50" },
+    { label: "Contacts Created", value: data.created, desc: "Total contacts created in date range", color: "#0EA5E9", bg: "#E0F2FE", icon: "\uD83D\uDC64", url: data.urls?.created },
+    { label: "Contacts Contacted", value: data.contacted, desc: "Last Call Outcome: Exists", color: "#3B82F6", bg: "#DBEAFE", icon: "\u260E", url: data.urls?.contacted },
+    { label: "Calls Answered", value: data.connected, desc: "Last Call Outcome: Connected", color: "#059669", bg: "#D1FAE5", icon: "\u2705", url: data.urls?.connected },
+    { label: "Leads Generated", value: data.leads, desc: "Disposition: Interested - Appointment Set", color: "#7C3AED", bg: "#EDE9FE", icon: "\u2B50", url: data.urls?.leads },
   ] : [];
 
   return (
@@ -1143,36 +1143,21 @@ function HubSpotDashboard() {
       {data && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 16 }}>
           {metrics.map((m) => (
-            <div key={m.label} style={{ borderRadius: 12, border: "1px solid " + m.color + "33", background: m.bg + "44", padding: "20px 20px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: 24 }}>{m.icon}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#475569" }}>{m.label}</span>
+            <div key={m.label} onClick={() => { if (m.url) window.open(m.url, "_blank"); }}
+              style={{ borderRadius: 12, border: "1px solid " + m.color + "33", background: m.bg + "44", padding: "20px 20px", cursor: "pointer", transition: "all 0.15s ease" }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 4px 12px " + m.color + "22"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 24 }}>{m.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#475569" }}>{m.label}</span>
+                </div>
+                <span style={{ fontSize: 12, color: "#94A3B8" }}>View in HubSpot →</span>
               </div>
               <div style={{ fontSize: 36, fontWeight: 800, color: m.color, marginBottom: 4 }}>{m.value.toLocaleString()}</div>
               <div style={{ fontSize: 11, color: "#94A3B8" }}>{m.desc}</div>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* Summary */}
-      {data && data.created > 0 && (
-        <div style={{ padding: "12px 16px", borderRadius: 8, background: "#F8FAFC", border: "1px solid #E2E8F0" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 6 }}>Conversion Funnel</div>
-          <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ fontSize: 12, color: "#64748B" }}>
-              Created → Contacted: <span style={{ fontWeight: 700, color: "#3B82F6" }}>{data.created > 0 ? ((data.contacted / data.created) * 100).toFixed(1) : 0}%</span>
-            </div>
-            <div style={{ fontSize: 12, color: "#64748B" }}>
-              Contacted → Answered: <span style={{ fontWeight: 700, color: "#059669" }}>{data.contacted > 0 ? ((data.connected / data.contacted) * 100).toFixed(1) : 0}%</span>
-            </div>
-            <div style={{ fontSize: 12, color: "#64748B" }}>
-              Answered → Leads: <span style={{ fontWeight: 700, color: "#7C3AED" }}>{data.connected > 0 ? ((data.leads / data.connected) * 100).toFixed(1) : 0}%</span>
-            </div>
-            <div style={{ fontSize: 12, color: "#64748B" }}>
-              Overall: <span style={{ fontWeight: 700, color: "#1E293B" }}>{data.created > 0 ? ((data.leads / data.created) * 100).toFixed(1) : 0}%</span> create-to-lead
-            </div>
-          </div>
         </div>
       )}
 
