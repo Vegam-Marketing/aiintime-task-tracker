@@ -1074,6 +1074,7 @@ function HubSpotDashboard() {
     { key: "contacted", label: "Contacts Contacted", value: data.contacted, desc: "Last Call Outcome: Exists", color: "#3B82F6", bg: "#DBEAFE", icon: "\u260E" },
     { key: "connected", label: "Calls Answered", value: data.connected, desc: "Last Call Outcome: Connected", color: "#059669", bg: "#D1FAE5", icon: "\u2705" },
     { key: "leads", label: "Leads Generated", value: data.leads, desc: "Disposition: Interested - Appointment Set", color: "#7C3AED", bg: "#EDE9FE", icon: "\u2B50" },
+    { key: "deals", label: "Deals in Discovery", value: data.deals, desc: "Deal Stage: Discovery", color: "#F59E0B", bg: "#FEF3C7", icon: "\uD83E\uDD1D" },
   ] : [];
 
   return (
@@ -1187,14 +1188,14 @@ function HubSpotDashboard() {
         </div>
       )}
 
-      {/* Contact drill-down table */}
+      {/* Drill-down table */}
       {activeMetric && (contactLoading ? (
-        <div style={{ padding: 20, textAlign: "center", color: "#94A3B8", fontSize: 13, background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0", marginBottom: 16 }}>Loading contacts...</div>
+        <div style={{ padding: 20, textAlign: "center", color: "#94A3B8", fontSize: 13, background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0", marginBottom: 16 }}>Loading...</div>
       ) : contactList.length > 0 && (
         <div style={{ borderRadius: 10, border: "1px solid #E2E8F0", overflow: "hidden", marginBottom: 16 }}>
           <div style={{ padding: "10px 16px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: "#475569" }}>
-              {metrics.find((m) => m.key === activeMetric)?.label} — {contactTotal > 100 ? `showing 100 of ${contactTotal}` : `${contactList.length} contacts`}
+              {metrics.find((m) => m.key === activeMetric)?.label} — {contactTotal > 100 ? `showing 100 of ${contactTotal}` : `${contactList.length} ${activeMetric === "deals" ? "deals" : "contacts"}`}
             </span>
             <button onClick={() => { setActiveMetric(null); setContactList([]); }} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, color: "#94A3B8", fontWeight: 600 }}>Close</button>
           </div>
@@ -1202,7 +1203,10 @@ function HubSpotDashboard() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ background: "#F1F5F9" }}>
-                  {["#", "Name", "Email", "Company", "Event", "Call Outcome", "Disposition", "Created", ""].map((h, i) => (
+                  {(activeMetric === "deals"
+                    ? ["#", "Deal Name", "Stage", "Amount", "Created", ""]
+                    : ["#", "Name", "Email", "Company", "Event", "Call Outcome", "Disposition", "Created", ""]
+                  ).map((h, i) => (
                     <th key={i} style={{ padding: "8px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#64748B", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -1214,11 +1218,20 @@ function HubSpotDashboard() {
                     onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                     <td style={{ padding: "8px 10px", color: "#94A3B8", fontWeight: 600 }}>{i + 1}</td>
                     <td style={{ padding: "8px 10px", fontWeight: 600, color: "#1E293B", whiteSpace: "nowrap" }}>{c.name}</td>
-                    <td style={{ padding: "8px 10px", color: "#64748B" }}>{c.email}</td>
-                    <td style={{ padding: "8px 10px", color: "#64748B" }}>{c.company}</td>
-                    <td style={{ padding: "8px 10px" }}>{c.event && <span style={{ padding: "2px 8px", borderRadius: 12, background: "#EDE9FE", color: "#5B21B6", fontSize: 10, fontWeight: 600 }}>{c.event}</span>}</td>
-                    <td style={{ padding: "8px 10px", color: "#475569", fontSize: 11 }}>{c.callOutcome}</td>
-                    <td style={{ padding: "8px 10px", color: "#475569", fontSize: 11 }}>{c.disposition}</td>
+                    {activeMetric === "deals" ? (
+                      <>
+                        <td style={{ padding: "8px 10px" }}><span style={{ padding: "2px 8px", borderRadius: 12, background: "#FEF3C7", color: "#92400E", fontSize: 10, fontWeight: 600 }}>{c.callOutcome}</span></td>
+                        <td style={{ padding: "8px 10px", fontWeight: 600, color: "#059669" }}>{c.disposition}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td style={{ padding: "8px 10px", color: "#64748B" }}>{c.email}</td>
+                        <td style={{ padding: "8px 10px", color: "#64748B" }}>{c.company}</td>
+                        <td style={{ padding: "8px 10px" }}>{c.event && <span style={{ padding: "2px 8px", borderRadius: 12, background: "#EDE9FE", color: "#5B21B6", fontSize: 10, fontWeight: 600 }}>{c.event}</span>}</td>
+                        <td style={{ padding: "8px 10px", color: "#475569", fontSize: 11 }}>{c.callOutcome}</td>
+                        <td style={{ padding: "8px 10px", color: "#475569", fontSize: 11 }}>{c.disposition}</td>
+                      </>
+                    )}
                     <td style={{ padding: "8px 10px", color: "#94A3B8", fontSize: 11, whiteSpace: "nowrap" }}>{c.created ? new Date(c.created).toLocaleDateString() : ""}</td>
                     <td style={{ padding: "8px 10px" }}>
                       <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#3B82F6", fontWeight: 600, textDecoration: "none" }}>Open ↗</a>
