@@ -800,7 +800,7 @@ export default function TaskTracker() {
             </button>
           </div>
           <div style={{ display: "flex", borderRadius: 8, border: "1px solid #E2E8F0", overflow: "hidden" }}>
-            {[["both", "Table + Gantt"], ["table", "Table"], ["gantt", "Gantt"]].map(([v, l]) => (
+            {[["both", "Table + Gantt"], ["table", "Table"], ["gantt", "Gantt"], ["hubspot", "HubSpot"]].map(([v, l]) => (
               <button key={v} onClick={() => setView(v)} style={{ padding: "6px 12px", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer", background: view === v ? "#1E293B" : "#fff", color: view === v ? "#fff" : "#64748B" }}>{l}</button>
             ))}
           </div>
@@ -987,10 +987,202 @@ export default function TaskTracker() {
         </div>
       )}
 
+      {/* HubSpot Dashboard */}
+      {view === "hubspot" && <HubSpotDashboard />}
 
     </div>
   );
 }
+
+// ─── HubSpot Dashboard ─────────────────────────────────────────────
+function HubSpotDashboard() {
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [eventInput, setEventInput] = useState("");
+  const [eventNames, setEventNames] = useState([]);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // Default to last 14 days
+  useEffect(() => {
+    const now = new Date();
+    const twoWeeksAgo = new Date(now);
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    setDateFrom(fmt(twoWeeksAgo));
+    setDateTo(fmt(now));
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/hubspot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dateFrom, dateTo, eventNames }),
+      });
+      const d = await res.json();
+      if (d.error) { setError(d.error); setData(null); }
+      else setData(d);
+    } catch (err) {
+      setError("Failed to fetch HubSpot data");
+    }
+    setLoading(false);
+  }, [dateFrom, dateTo, eventNames]);
+
+  // Fetch on mount and when filters change
+  useEffect(() => {
+    if (dateFrom && dateTo) fetchData();
+  }, [dateFrom, dateTo, eventNames, fetchData]);
+
+  const addEvent = () => {
+    const trimmed = eventInput.trim();
+    if (trimmed && !eventNames.includes(trimmed)) {
+      setEventNames((prev) => [...prev, trimmed]);
+    }
+    setEventInput("");
+  };
+
+  const removeEvent = (name) => setEventNames((prev) => prev.filter((e) => e !== name));
+
+  const metrics = data ? [
+    { label: "Contacts Created", value: data.created, desc: "Total contacts created in date range", color: "#0EA5E9", bg: "#E0F2FE", icon: "\uD83D\uDC64" },
+    { label: "Contacts Contacted", value: data.contacted, desc: "Last Call Outcome: Exists", color: "#3B82F6", bg: "#DBEAFE", icon: "\u260E" },
+    { label: "Calls Answered", value: data.connected, desc: "Last Call Outcome: Connected", color: "#059669", bg: "#D1FAE5", icon: "\u2705" },
+    { label: "Leads Generated", value: data.leads, desc: "Disposition: Interested - Appointment Set", color: "#7C3AED", bg: "#EDE9FE", icon: "\u2B50" },
+  ] : [];
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.05)", padding: 20 }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 20 }}>📊</span>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#0F172A" }}>HubSpot Dashboard</h3>
+        </div>
+        <button onClick={fetchData} disabled={loading}
+          style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #E2E8F0", background: loading ? "#F1F5F9" : "#fff", fontSize: 12, fontWeight: 600, color: loading ? "#94A3B8" : "#475569", cursor: loading ? "default" : "pointer" }}>
+          {loading ? "Loading..." : "↻ Refresh"}
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+        {/* Date range */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Contact Create Date Range</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#F8FAFC", borderRadius: 8, padding: "6px 10px", border: "1px solid #E2E8F0" }}>
+            <span style={{ fontSize: 10, color: "#64748B" }}>From</span>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+              onClick={(e) => { try { e.target.showPicker(); } catch(err) {} }}
+              style={{ border: "1px solid #E2E8F0", background: "#fff", fontSize: 12, borderRadius: 4, padding: "4px 6px", color: "#334155", outline: "none", cursor: "pointer", width: 120 }} />
+            <span style={{ fontSize: 10, color: "#64748B" }}>To</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+              onClick={(e) => { try { e.target.showPicker(); } catch(err) {} }}
+              style={{ border: "1px solid #E2E8F0", background: "#fff", fontSize: 12, borderRadius: 4, padding: "4px 6px", color: "#334155", outline: "none", cursor: "pointer", width: 120 }} />
+          </div>
+        </div>
+
+        {/* Quick date presets */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Quick</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[
+              { label: "1W", days: 7 },
+              { label: "2W", days: 14 },
+              { label: "1M", days: 30 },
+              { label: "3M", days: 90 },
+            ].map((p) => (
+              <button key={p.label} onClick={() => {
+                const now = new Date();
+                const from = new Date(now);
+                from.setDate(from.getDate() - p.days);
+                setDateFrom(fmt(from));
+                setDateTo(fmt(now));
+              }} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", fontSize: 11, fontWeight: 600, color: "#64748B", cursor: "pointer" }}>{p.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Event Name filter */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 200 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase" }}>Event Name Filter (SQL match)</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            <input value={eventInput} onChange={(e) => setEventInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addEvent(); }}
+              placeholder="Enter event name..."
+              style={{ flex: 1, border: "1px solid #E2E8F0", borderRadius: 6, padding: "6px 10px", fontSize: 12, color: "#334155", outline: "none", background: "#fff" }} />
+            <button onClick={addEvent} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#475569", cursor: "pointer" }}>+ Add</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Event tags */}
+      {eventNames.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+          <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, alignSelf: "center" }}>Events:</span>
+          {eventNames.map((name) => (
+            <span key={name} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 20, background: "#EDE9FE", color: "#5B21B6", fontSize: 11, fontWeight: 600, border: "1px solid #DDD6FE" }}>
+              {name}
+              <button onClick={() => removeEvent(name)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 13, color: "#7C3AED", padding: 0, lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+          <button onClick={() => setEventNames([])} style={{ fontSize: 10, color: "#94A3B8", border: "none", background: "none", cursor: "pointer", fontWeight: 600 }}>Clear all</button>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div style={{ padding: "10px 14px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA", color: "#991B1B", fontSize: 12, fontWeight: 500, marginBottom: 16 }}>
+          {error}
+        </div>
+      )}
+
+      {/* Metric cards */}
+      {data && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 16 }}>
+          {metrics.map((m) => (
+            <div key={m.label} style={{ borderRadius: 12, border: "1px solid " + m.color + "33", background: m.bg + "44", padding: "20px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 24 }}>{m.icon}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#475569" }}>{m.label}</span>
+              </div>
+              <div style={{ fontSize: 36, fontWeight: 800, color: m.color, marginBottom: 4 }}>{m.value.toLocaleString()}</div>
+              <div style={{ fontSize: 11, color: "#94A3B8" }}>{m.desc}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Summary */}
+      {data && data.created > 0 && (
+        <div style={{ padding: "12px 16px", borderRadius: 8, background: "#F8FAFC", border: "1px solid #E2E8F0" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 6 }}>Conversion Funnel</div>
+          <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ fontSize: 12, color: "#64748B" }}>
+              Created → Contacted: <span style={{ fontWeight: 700, color: "#3B82F6" }}>{data.created > 0 ? ((data.contacted / data.created) * 100).toFixed(1) : 0}%</span>
+            </div>
+            <div style={{ fontSize: 12, color: "#64748B" }}>
+              Contacted → Answered: <span style={{ fontWeight: 700, color: "#059669" }}>{data.contacted > 0 ? ((data.connected / data.contacted) * 100).toFixed(1) : 0}%</span>
+            </div>
+            <div style={{ fontSize: 12, color: "#64748B" }}>
+              Answered → Leads: <span style={{ fontWeight: 700, color: "#7C3AED" }}>{data.connected > 0 ? ((data.leads / data.connected) * 100).toFixed(1) : 0}%</span>
+            </div>
+            <div style={{ fontSize: 12, color: "#64748B" }}>
+              Overall: <span style={{ fontWeight: 700, color: "#1E293B" }}>{data.created > 0 ? ((data.leads / data.created) * 100).toFixed(1) : 0}%</span> create-to-lead
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading && !data && (
+        <div style={{ textAlign: "center", padding: 40, color: "#94A3B8", fontSize: 14 }}>Loading HubSpot data...</div>
+      )}
+    </div>
+  );
+}
+
 
 function getDefaultTasks() {
   return [
