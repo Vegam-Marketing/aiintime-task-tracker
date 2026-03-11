@@ -1165,7 +1165,7 @@ function HubSpotDashboard() {
 
       {/* Metric cards */}
       {data && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 16 }}>
           {metrics.map((m) => {
             const isActive = activeMetric === m.key;
             return (
@@ -1204,7 +1204,7 @@ function HubSpotDashboard() {
               <thead>
                 <tr style={{ background: "#F1F5F9" }}>
                   {(activeMetric === "deals"
-                    ? ["#", "Deal Name", "Stage", "Amount", "Created", ""]
+                    ? ["#", "Deal Name", "Stage", "Created", ""]
                     : ["#", "Name", "Email", "Company", "Event", "Call Outcome", "Disposition", "Created", ""]
                   ).map((h, i) => (
                     <th key={i} style={{ padding: "8px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#64748B", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
@@ -1221,7 +1221,6 @@ function HubSpotDashboard() {
                     {activeMetric === "deals" ? (
                       <>
                         <td style={{ padding: "8px 10px" }}><span style={{ padding: "2px 8px", borderRadius: 12, background: "#FEF3C7", color: "#92400E", fontSize: 10, fontWeight: 600 }}>{c.callOutcome}</span></td>
-                        <td style={{ padding: "8px 10px", fontWeight: 600, color: "#059669" }}>{c.disposition}</td>
                       </>
                     ) : (
                       <>
