@@ -1013,9 +1013,9 @@ function HubSpotDashboard() {
   // Default to last 14 days
   useEffect(() => {
     const now = new Date();
-    const twoWeeksAgo = new Date(now);
-    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-    setDateFrom(fmt(twoWeeksAgo));
+    const threeMonthsAgo = new Date(now);
+    threeMonthsAgo.setDate(threeMonthsAgo.getDate() - 90);
+    setDateFrom(fmt(threeMonthsAgo));
     setDateTo(fmt(now));
   }, []);
 
