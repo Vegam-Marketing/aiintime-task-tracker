@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getTasks, saveTasks, getTeam } from "../../../lib/sheets";
+import { verifyToken, getTokenFromRequest, unauthorizedResponse } from "../../../lib/auth";
 
-export async function GET() {
+export async function GET(req) {
+  if (!verifyToken(getTokenFromRequest(req))) return unauthorizedResponse();
   try {
     const [tasks, team] = await Promise.all([getTasks(), getTeam()]);
     const nextId = tasks.length === 0 ? 1 : Math.max(...tasks.map((t) => t.id)) + 1;
@@ -13,6 +15,7 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  if (!verifyToken(getTokenFromRequest(request))) return unauthorizedResponse();
   try {
     const { tasks } = await request.json();
     if (!Array.isArray(tasks)) return NextResponse.json({ error: "tasks must be an array" }, { status: 400 });

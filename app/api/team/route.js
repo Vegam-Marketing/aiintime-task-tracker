@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getTeam, saveTeam } from "../../../lib/sheets";
+import { verifyToken, getTokenFromRequest, unauthorizedResponse } from "../../../lib/auth";
 
-export async function GET() {
+export async function GET(req) {
+  if (!verifyToken(getTokenFromRequest(req))) return unauthorizedResponse();
   try {
     const team = await getTeam();
     return NextResponse.json({ team });
@@ -15,6 +17,7 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  if (!verifyToken(getTokenFromRequest(request))) return unauthorizedResponse();
   try {
     const { team } = await request.json();
     if (!Array.isArray(team)) {

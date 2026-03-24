@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { verifyToken, getTokenFromRequest, unauthorizedResponse } from "../../../lib/auth";
 
 export async function POST(req) {
+  if (!verifyToken(getTokenFromRequest(req))) return unauthorizedResponse();
   try {
     const { query, tasks } = await req.json();
     if (!query || !tasks) return NextResponse.json({ error: "Missing query or tasks" }, { status: 400 });

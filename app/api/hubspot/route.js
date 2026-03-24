@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { verifyToken, getTokenFromRequest, unauthorizedResponse } from "../../../lib/auth";
 
 const HUBSPOT_API_CONTACTS = "https://api.hubapi.com/crm/v3/objects/contacts/search";
 const HUBSPOT_API_DEALS = "https://api.hubapi.com/crm/v3/objects/deals/search";
@@ -26,6 +27,7 @@ async function searchObjects(token, apiUrl, filters, limit = 1, properties = ["f
 }
 
 export async function POST(req) {
+  if (!verifyToken(getTokenFromRequest(req))) return unauthorizedResponse();
   try {
     const { dateFrom, dateTo, eventNames, metric } = await req.json();
 

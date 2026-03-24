@@ -369,6 +369,12 @@ function GanttChart({ displayList, calendarStart, calendarDays, onUpdateTask, ow
 
 // ─── Main Component ─────────────────────────────────────────────────
 export default function TaskTracker() {
+  // Auth headers for API calls
+  const authHeaders = () => {
+    const token = typeof window !== "undefined" ? sessionStorage.getItem("gtm_token") : "";
+    return { "Content-Type": "application/json", Authorization: `Bearer ${token || ""}` };
+  };
+
   const [tasks, setTasks] = useState([]);
   const [team, setTeam] = useState(DEFAULT_TEAM);
   const [nextId, setNextId] = useState(1);
@@ -396,7 +402,7 @@ export default function TaskTracker() {
 
   // Load
   useEffect(() => {
-    fetch("/api/tasks").then((r) => r.json()).then((data) => {
+    fetch("/api/tasks", { headers: authHeaders() }).then((r) => r.json()).then((data) => {
       if (data.tasks?.length > 0) { setTasks(data.tasks); setNextId(data.nextId || data.tasks.length + 1); }
       else { const d = getDefaultTasks(); setTasks(d); setNextId(d.length + 1); }
       if (data.team?.length > 0) setTeam(data.team);
@@ -452,7 +458,7 @@ export default function TaskTracker() {
     setSaveStatus("saving");
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(() => {
-      fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tasks }) })
+      fetch("/api/tasks", { method: "POST", headers: authHeaders(), body: JSON.stringify({ tasks }) })
         .then((r) => setSaveStatus(r.ok ? "saved" : "error")).catch(() => setSaveStatus("error"));
     }, 1500);
     return () => { if (saveTimeout.current) clearTimeout(saveTimeout.current); };
@@ -460,7 +466,7 @@ export default function TaskTracker() {
 
   const handleSaveTeam = useCallback((newTeam) => {
     setTeam(newTeam);
-    fetch("/api/team", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: newTeam }) }).catch(console.error);
+    fetch("/api/team", { method: "POST", headers: authHeaders(), body: JSON.stringify({ team: newTeam }) }).catch(console.error);
   }, []);
 
   const goToday = () => setCalStart(fmt(getMonday(today)));
@@ -668,7 +674,7 @@ export default function TaskTracker() {
     try {
       const res = await fetch("/api/search", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ query: searchQuery, tasks }),
       });
       const data = await res.json();
@@ -998,6 +1004,10 @@ export default function TaskTracker() {
 
 // ─── HubSpot Dashboard ─────────────────────────────────────────────
 function HubSpotDashboard() {
+  const authHeaders = () => {
+    const token = typeof window !== "undefined" ? sessionStorage.getItem("gtm_token") : "";
+    return { "Content-Type": "application/json", Authorization: `Bearer ${token || ""}` };
+  };
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [eventInput, setEventInput] = useState("");
@@ -1025,7 +1035,7 @@ function HubSpotDashboard() {
     try {
       const res = await fetch("/api/hubspot", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ dateFrom, dateTo, eventNames }),
       });
       const d = await res.json();
@@ -1059,7 +1069,7 @@ function HubSpotDashboard() {
     try {
       const res = await fetch("/api/hubspot", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ dateFrom, dateTo, eventNames, metric: metricKey }),
       });
       const d = await res.json();
